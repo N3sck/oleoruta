@@ -1084,6 +1084,9 @@
   sincronizarCuentas();
 
   if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('sw.js').catch(() => { });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
+    // Cuando se activa una versión nueva del service worker, recarga una sola vez para mostrarla
+    let recargado = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!recargado) { recargado = true; location.reload(); } });
   }
 })();
