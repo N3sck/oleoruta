@@ -487,3 +487,13 @@ table.t td.r, table.t th.r { text-align: right; }
 .cred { background: var(--card); border: 1px solid var(--line-2); border-radius: 22px; padding: 20px; }
 .cred .cid { font-family: var(--mono); font-size: 40px; font-weight: 700; color: var(--oil); letter-spacing: .02em; margin-top: 6px; }
 .cred .cpass { font-size: 20px; font-weight: 600; margin-top: 6px; word-break: break-word; }
+
+/* ---------- selector de colonia (zona piloto) ---------- */
+.colonias { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.col { text-align: left; background: var(--card); border: 1px solid var(--line-2); border-radius: 14px; padding: 11px 12px; transition: background .2s, border-color .2s; }
+.col b { display: block; font-size: 14px; font-weight: 600; }
+.col span { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.col.on { background: linear-gradient(160deg, rgba(255, 194, 26, .22), rgba(255, 194, 26, .06)), var(--card); border-color: var(--oil); }
+.col.on span { color: var(--oil); }
+@media (min-width: 1024px) { .colonias { grid-template-columns: repeat(3, 1fr); } }
+@media (hover: hover) { .col:hover { border-color: rgba(255, 194, 26, .5); } }

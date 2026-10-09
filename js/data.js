@@ -17,18 +17,39 @@
 
   const ZONAS = [
     { zona: 'Narvarte', codigo: 'NAR', alcaldia: 'Benito Juárez' },
-    { zona: 'Doctores', codigo: 'DOC', alcaldia: 'Cuauhtémoc' },
+    { zona: 'Polanco', codigo: 'POL', alcaldia: 'Miguel Hidalgo' },
     { zona: 'Portales', codigo: 'POR', alcaldia: 'Benito Juárez' },
   ];
+
+  // Zona piloto: solo estas colonias pueden crear cuenta e iniciar sesión (negocios).
+  // Cada colonia se asigna sola a una de las 3 zonas de recolección (lotes de 20 L).
+  const COLONIAS = [
+    { colonia: 'Narvarte', zona: 'Narvarte', alcaldia: 'Benito Juárez' },
+    { colonia: 'Del Valle', zona: 'Narvarte', alcaldia: 'Benito Juárez' },
+    { colonia: 'Condesa', zona: 'Narvarte', alcaldia: 'Cuauhtémoc' },
+    { colonia: 'Roma Norte', zona: 'Narvarte', alcaldia: 'Cuauhtémoc' },
+    { colonia: 'Polanco', zona: 'Polanco', alcaldia: 'Miguel Hidalgo' },
+    { colonia: 'Lomas de Chapultepec', zona: 'Polanco', alcaldia: 'Miguel Hidalgo' },
+    { colonia: 'Santa Fe', zona: 'Polanco', alcaldia: 'Cuajimalpa' },
+    { colonia: 'Portales', zona: 'Portales', alcaldia: 'Benito Juárez' },
+    { colonia: 'Coyoacán', zona: 'Portales', alcaldia: 'Coyoacán' },
+    { colonia: 'San Ángel', zona: 'Portales', alcaldia: 'Álvaro Obregón' },
+  ];
+  const sinAcentos = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // «Narvarte Poniente», «Portales Norte», «Del Valle Centro»… cuentan como su colonia base
+  function coloniaPermitida(texto) {
+    const t = sinAcentos(texto);
+    return COLONIAS.find(c => t === sinAcentos(c.colonia) || t.startsWith(sinAcentos(c.colonia) + ' ')) || null;
+  }
 
   // Hoja «Generadores» (datos de prueba del equipo)
   const GENERADORES = [
     { id: 'GEN-001', nombre: 'Tacos Don Beto', tipo: 'Puesto de tacos', responsable: 'Roberto M.', telefono: '5500000001', colonia: 'Narvarte Poniente', zona: 'Narvarte', litrosSemana: 5, clabe: '646180000000000011', fechaAlta: '2026-10-05', contenedor: 20 },
     { id: 'GEN-002', nombre: 'Quesadillas Doña Lupe', tipo: 'Puesto de quesadillas', responsable: 'Guadalupe R.', telefono: '5500000002', colonia: 'Narvarte Poniente', zona: 'Narvarte', litrosSemana: 15, clabe: '646180000000000022', fechaAlta: '2026-10-05', contenedor: 20 },
-    { id: 'GEN-003', nombre: 'Tianguis del Martes – Pasillo A', tipo: 'Tianguis (contenedor)', responsable: 'Mesa directiva', telefono: '5500000003', colonia: 'Doctores', zona: 'Doctores', litrosSemana: 40, clabe: '646180000000000033', fechaAlta: '2026-10-05', contenedor: 200 },
+    { id: 'GEN-003', nombre: 'Tianguis del Martes – Pasillo A', tipo: 'Tianguis (contenedor)', responsable: 'Mesa directiva', telefono: '5500000003', colonia: 'Polanco', zona: 'Polanco', litrosSemana: 40, clabe: '646180000000000033', fechaAlta: '2026-10-05', contenedor: 200 },
     { id: 'GEN-004', nombre: 'Garnachas El Portal', tipo: 'Fritanga', responsable: 'Jorge P.', telefono: '5500000004', colonia: 'Portales Norte', zona: 'Portales', litrosSemana: 5, clabe: '646180000000000044', fechaAlta: '2026-10-05', contenedor: 20 },
     { id: 'GEN-005', nombre: 'Churros La Esquina', tipo: 'Puesto de churros', responsable: 'Ana L.', telefono: '5500000005', colonia: 'Portales Norte', zona: 'Portales', litrosSemana: 6, clabe: '646180000000000055', fechaAlta: '2026-10-05', contenedor: 20 },
-    { id: 'GEN-006', nombre: 'Tacos de Canasta Rosy', tipo: 'Puesto de tacos', responsable: 'Rosa H.', telefono: '5500000006', colonia: 'Doctores', zona: 'Doctores', litrosSemana: 8, clabe: '646180000000000066', fechaAlta: '2026-10-05', contenedor: 20 },
+    { id: 'GEN-006', nombre: 'Tacos de Canasta Rosy', tipo: 'Puesto de tacos', responsable: 'Rosa H.', telefono: '5500000006', colonia: 'Polanco', zona: 'Polanco', litrosSemana: 8, clabe: '646180000000000066', fechaAlta: '2026-10-05', contenedor: 20 },
   ];
 
   // Patrón de uso simulado de cada puesto (cada cuántos días entrega y a qué hora)
@@ -103,7 +124,7 @@
 
     // Corridas a planta: cada viernes 16:00 se envían las zonas con ≥ umbral
     const lotes = [];
-    const contador = { Narvarte: 0, Doctores: 0, Portales: 0 };
+    const contador = { Narvarte: 0, Polanco: 0, Portales: 0 };
     for (let f = new Date(2026, 7, 14, 16, 0); f < SEED_FIN; f = new Date(f.getTime() + 7 * 86400000)) {
       ZONAS.forEach(z => {
         const pend = recolecciones.filter(x => x.estadoLote === 'PENDIENTE' && new Date(x.fecha) < f && zonaDe(x.idGenerador) === z.zona);
@@ -124,7 +145,7 @@
       { id: 'SOL-0005', idGenerador: 'GEN-006', fecha: '2026-09-24T09:05:00', litrosEstimados: 10, nota: 'Estoy en la esquina de Dr. Vértiz.', estado: 'ATENDIDA' },
     ];
 
-    return { version: 1, config: cfg, generadores: GENERADORES.map(g => ({ ...g })), recolecciones, lotes, solicitudes, creado: iso(new Date()) };
+    return { version: 2, config: cfg, generadores: GENERADORES.map(g => ({ ...g })), recolecciones, lotes, solicitudes, creado: iso(new Date()) };
 
     function zonaDe(id) { return GENERADORES.find(g => g.id === id).zona; }
   }
@@ -133,7 +154,7 @@
   let db = null;
   function load() {
     try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
-    if (!db || db.version !== 1) { db = seed(); save(); }
+    if (!db || db.version !== 2) { db = seed(); save(); }   // v2: Doctores → Polanco (zona piloto)
     return db;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { console.warn('No se pudo guardar', e); } }
@@ -186,7 +207,7 @@
   function rutaDelDia(ahora = new Date()) {
     const hoy = new Date(ahora); hoy.setHours(0, 0, 0, 0);
     const manana = new Date(hoy.getTime() + 2 * 86400000);
-    const orden = { Narvarte: 0, Doctores: 1, Portales: 2 };
+    const orden = { Narvarte: 0, Polanco: 1, Portales: 2 };
     const paradas = [];
     db.generadores.forEach(g => {
       const hoyRec = recsDe(g.id).find(r => new Date(r.fecha) >= hoy);
@@ -267,6 +288,14 @@
     return iso(new Date()).slice(0, 10);
   }
 
+  // Zona de recolección: se calcula desde la colonia (zona piloto); «Doctores» ya no existe → Polanco
+  function zonaDe(colonia, zonaHoja) {
+    const c = coloniaPermitida(colonia);
+    if (c) return c.zona;
+    if (ZONAS.some(z => z.zona === zonaHoja)) return zonaHoja;
+    return 'Polanco';
+  }
+
   // Fila de la hoja «Generadores» (o respuesta del alta) → generador local
   function desdeHoja(r) {
     const id = String(r.ID_Generador || r.id_generador || '').trim().toUpperCase();
@@ -275,7 +304,7 @@
     return {
       id, nombre: String(r.Nombre_Negocio || r.nombre || '').trim(), tipo,
       responsable: r.Responsable || r.responsable || '', telefono: String(r.Telefono || r.telefono || '').replace(/\D/g, ''),
-      colonia: r.Colonia || r.colonia || '', zona: r.Zona || r.zona || 'Narvarte',
+      colonia: r.Colonia || r.colonia || '', zona: zonaDe(r.Colonia || r.colonia, r.Zona || r.zona),
       litrosSemana: +(r.Litros_Semana || r.litros_semana) || 5, clabe: String(r.CLABE_Simulada || r.clabe || '').replace(/\D/g, ''),
       fechaAlta: fechaISO(r.Fecha_Alta || r.fecha_alta), contenedor: /tianguis/i.test(tipo) ? 200 : 20,
     };
@@ -305,7 +334,7 @@
   function setConfig(c) { Object.assign(db.config, c); save(); }
 
   window.OleoDB = {
-    load, save, reset, get db() { return db; }, ZONAS, iso,
+    load, save, reset, get db() { return db; }, ZONAS, COLONIAS, coloniaPermitida, iso,
     gen, rec, recsDe, zonas, zona, resumen, nivelEstimado, rutaDelDia,
     registrarEntrega, liquidar, enviarLote, altaGenerador, siguienteId, solicitar, setConfig,
     TIPOS, desdeHoja, upsertGenerador,

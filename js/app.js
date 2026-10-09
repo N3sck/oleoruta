@@ -133,6 +133,7 @@
       const g = D.gen(id);
       if (!g) return fail(`No encontramos la cuenta ${id}. Revisa tu usuario o crea una cuenta nueva.`);
       if (norm(pass) !== norm(g.nombre)) return fail('La contraseña no coincide. Recuerda: es el nombre de tu negocio.');
+      if (!D.coloniaPermitida(g.colonia)) return fail(`Por ahora OleoRuta solo opera en la zona piloto (${D.COLONIAS.map(c => c.colonia).join(', ')}). Tu colonia, ${g.colonia || 'sin registrar'}, aún no está disponible.`);
       haptic('success');
       setSession({ role: 'G', id: g.id });
       go(`#/g/${g.id}/inicio`);
@@ -252,28 +253,32 @@
         <div class="tipos" id="${prefijo}tipos">${D.TIPOS.map((t, i) => `<button type="button" class="tipo ${i === 0 ? 'on' : ''}" data-tipo="${esc(t.valor)}"><span class="ti">${icon(/Tianguis/.test(t.valor) ? 'layers' : t.valor === 'Fonda' ? 'home' : t.valor === 'Otro' ? 'more' : 'store')}</span><b>${t.corto}</b><span>≈ ${t.litros} L/sem</span></button>`).join('')}</div></div>
       <div class="field"><label>Nombre del responsable</label><div class="inp">${icon('user')}<input name="responsable" maxlength="40" placeholder="Nombre y apellido" autocapitalize="words"></div></div>
       <div class="field"><label>Teléfono (WhatsApp)</label><div class="inp">${icon('phone')}<input name="telefono" inputmode="numeric" maxlength="14" autocomplete="tel-national" placeholder="10 dígitos"></div></div>
-      <div class="field"><label>Colonia</label><div class="inp">${icon('pin')}<input name="colonia" maxlength="40" placeholder="Ej. Narvarte Oriente" autocapitalize="words"></div></div>
-      <div class="field"><label>Zona de recolección</label><div class="seg mt0" id="${prefijo}zona">${D.ZONAS.map((z, i) => `<button type="button" class="${i === 0 ? 'on' : ''}" data-zona="${z.zona}">${z.zona}</button>`).join('')}</div></div>`;
+      <div class="field"><label>Colonia <span class="muted">· zona piloto</span></label>
+        <div class="colonias" id="${prefijo}col">${D.COLONIAS.map(c => `<button type="button" class="col" data-col="${esc(c.colonia)}"><b>${esc(c.colonia)}</b><span>${esc(c.alcaldia)}</span></button>`).join('')}</div>
+        <div class="hint" id="${prefijo}zhint">OleoRuta opera por ahora solo en estas colonias. La zona de recolección se asigna sola.</div></div>`;
   }
   function bindAlta(root, prefijo, onDone) {
     const f = root.querySelector('form'), err = root.querySelector('#err'), btn = root.querySelector('button[type=submit]');
-    let tipo = D.TIPOS[0].valor, zona = D.ZONAS[0].zona;
+    let tipo = D.TIPOS[0].valor, colonia = null;
     root.querySelectorAll(`#${prefijo}tipos .tipo`).forEach(b => b.onclick = () => {
       root.querySelectorAll(`#${prefijo}tipos .tipo`).forEach(x => x.classList.remove('on')); b.classList.add('on'); tipo = b.dataset.tipo; haptic('light');
       b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     });
-    root.querySelectorAll(`#${prefijo}zona button`).forEach(b => b.onclick = () => {
-      root.querySelectorAll(`#${prefijo}zona button`).forEach(x => x.classList.remove('on')); b.classList.add('on'); zona = b.dataset.zona;
+    root.querySelectorAll(`#${prefijo}col .col`).forEach(b => b.onclick = () => {
+      root.querySelectorAll(`#${prefijo}col .col`).forEach(x => x.classList.remove('on')); b.classList.add('on'); haptic('light');
+      colonia = D.coloniaPermitida(b.dataset.col);
+      if (/colonia/.test(err.textContent)) err.innerHTML = '';
+      root.querySelector(`#${prefijo}zhint`).innerHTML = `Zona de recolección: <b style="color:var(--oil)">${esc(colonia.zona)}</b> · ${esc(colonia.alcaldia)}`;
     });
     f.telefono.oninput = () => { f.telefono.value = f.telefono.value.replace(/\D/g, '').slice(0, 10); };
     f.onsubmit = async (e) => {
       e.preventDefault();
-      const d = { nombre: f.nombre.value.trim().replace(/\s+/g, ' '), tipo, responsable: f.responsable.value.trim(), telefono: f.telefono.value, colonia: f.colonia.value.trim(), zona };
+      const d = { nombre: f.nombre.value.trim().replace(/\s+/g, ' '), tipo, responsable: f.responsable.value.trim(), telefono: f.telefono.value, colonia: colonia ? colonia.colonia : '', zona: colonia ? colonia.zona : '' };
       const faltan = [];
       if (d.nombre.length < 3) faltan.push('el nombre del negocio (mínimo 3 letras)');
       if (d.responsable.length < 2) faltan.push('el nombre del responsable');
       if (!/^\d{10}$/.test(d.telefono)) faltan.push('un teléfono de 10 dígitos');
-      if (d.colonia.length < 2) faltan.push('la colonia');
+      if (!colonia) faltan.push('tu colonia (de la lista)');
       const fail = (m) => { err.innerHTML = `<div class="field"><div class="err">${m}</div></div>`; haptic('light'); };
       if (faltan.length) return fail('Falta ' + faltan.join(', ') + '.');
       if (db().generadores.some(g => norm(g.nombre) === norm(d.nombre))) return fail('Ya existe una cuenta con ese nombre de negocio.');
@@ -1154,10 +1159,10 @@
     const dev = !!(NATIVE && NATIVE.dev);   // ruta abierta desde Xcode con -route (pruebas)
     if (!parts.length) {
       if (ses && ses.role === 'R' && ses.id) return go('#/r/inicio');
-      if (ses && ses.role === 'G' && D.gen(ses.id)) return go(`#/g/${ses.id}/inicio`);
+      if (ses && ses.role === 'G' && D.gen(ses.id) && D.coloniaPermitida(D.gen(ses.id).colonia)) return go(`#/g/${ses.id}/inicio`);
       return go('#/login');
     }
-    if (parts[0] === 'login') { if (ses && ses.role === 'G' && D.gen(ses.id)) return go(`#/g/${ses.id}/inicio`); Login(q); return after(); }
+    if (parts[0] === 'login') { if (ses && ses.role === 'G' && D.gen(ses.id) && D.coloniaPermitida(D.gen(ses.id).colonia)) return go(`#/g/${ses.id}/inicio`); Login(q); return after(); }
     if (parts[0] === 'registro') { Registro(); return after(); }
     if (parts[0] === 'bienvenida') { Bienvenida(parts[1]); return after(); }
     if (parts[0] === 'rlogin') { if (ses && ses.role === 'R' && ses.id) return go('#/r/inicio'); RLogin(q); return after(); }
@@ -1177,6 +1182,7 @@
       const g = D.gen(parts[1]);
       if (!g) return go('#/login');
       if (!(ses && ses.role === 'G' && ses.id === g.id) && !dev) return go('#/login');
+      if (!D.coloniaPermitida(g.colonia) && !dev) { setSession(null); return go('#/login'); }
       setSession({ role: 'G', id: g.id });
       const v = parts[2], a = parts[3];
       html = ({ inicio: () => GInicio(g), entregas: () => GEntregas(g), comprobante: () => GComprobante(g, a), qr: () => GQR(g), impacto: () => GImpacto(g), perfil: () => GPerfil(g) }[v] || (() => GInicio(g)))();
