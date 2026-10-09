@@ -120,7 +120,7 @@
         fechaLiquidacion: iso(fl),
         estadoLote: 'PENDIENTE',
         idLote: null,
-        recolector: cfg.recolector,
+        recolector: cfg.recolector, idRecolector: 'OR-01',
         pipeline: { bot, makeA: a, makeB: b, total: bot + a + b + 250 },
       };
     });
@@ -148,7 +148,7 @@
       { id: 'SOL-0005', idGenerador: 'GEN-006', fecha: '2026-09-24T09:05:00', litrosEstimados: 10, nota: 'Estoy en la esquina de Dr. Vértiz.', estado: 'ATENDIDA' },
     ];
 
-    return { version: 3, config: cfg, generadores: GENERADORES.map(g => ({ ...g })), recolecciones, lotes, solicitudes, creado: iso(new Date()) };
+    return { version: 4, config: cfg, generadores: GENERADORES.map(g => ({ ...g })), recolecciones, lotes, solicitudes, creado: iso(new Date()) };
 
     function zonaDe(id) { return GENERADORES.find(g => g.id === id).zona; }
   }
@@ -157,7 +157,7 @@
   let db = null;
   function load() {
     try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
-    if (!db || db.version !== 3) { db = seed(); save(); }   // v3: ubicación de los negocios
+    if (!db || db.version !== 4) { db = seed(); save(); }   // v4: cada entrega guarda su recolector
     return db;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { console.warn('No se pudo guardar', e); } }
@@ -179,8 +179,11 @@
   }
   const zona = (nombre) => zonas().find(z => z.zona === nombre);
 
-  function resumen(desde) {
-    const rs = db.recolecciones.filter(r => !desde || new Date(r.fecha) >= desde);
+  // ¿La entrega la hizo este recolector? (las entregas de la demo, sin dato, son de OR-01)
+  const deRecolector = (r, id) => (r.idRecolector || 'OR-01') === id;
+
+  function resumen(desde, filtro = () => true) {
+    const rs = db.recolecciones.filter(r => filtro(r) && (!desde || new Date(r.fecha) >= desde));
     const litros = rs.reduce((s, r) => s + r.litros, 0);
     const pago = rs.reduce((s, r) => s + r.pago, 0);
     const agua = rs.reduce((s, r) => s + r.agua, 0);
@@ -188,7 +191,8 @@
     const tiempos = rs.map(r => r.pipeline ? r.pipeline.total : 0).filter(Boolean);
     return {
       entregas: rs.length, litros, pago, agua, activos,
-      lotes: db.lotes.filter(l => !desde || new Date(l.fechaEnvio) >= desde).length,
+      lotes: new Set(rs.map(r => r.idLote).filter(Boolean)).size,
+      aPlanta: rs.filter(r => r.estadoLote === 'EN PLANTA').reduce((s, r) => s + r.litros, 0),
       ticket: rs.length ? pago / rs.length : 0,
       liquidacionSeg: tiempos.length ? tiempos.reduce((a, b) => a + b, 0) / tiempos.length / 1000 : 0,
     };
@@ -197,7 +201,8 @@
   // Nivel estimado en el contenedor del puesto desde su última entrega
   function nivelEstimado(g, ahora = new Date()) {
     const rs = recsDe(g.id);
-    const ultima = rs[0] ? new Date(rs[0].fecha) : new Date(g.fechaAlta);
+    if (!rs.length) return { litros: 0, pct: 0, ultima: null, proxima: null, cada: 0, sinHistorial: true };   // cuenta nueva: inicia en 0
+    const ultima = new Date(rs[0].fecha);
     const dias = Math.max(0, (ahora - ultima) / 86400000);
     const litros = Math.min(g.contenedor, g.litrosSemana * dias / 7);
     const plan = PLANES[g.id];
@@ -217,7 +222,7 @@
       const n = nivelEstimado(g, ahora);
       const sol = db.solicitudes.find(s => s.idGenerador === g.id && s.estado === 'ABIERTA');
       if (hoyRec) paradas.push({ g, estado: 'RECOLECTADO', rec: hoyRec, n, sol: null });
-      else if (sol || n.proxima < manana) paradas.push({ g, estado: 'PENDIENTE', n, sol });
+      else if (sol || (n.proxima && n.proxima < manana)) paradas.push({ g, estado: 'PENDIENTE', n, sol });
     });
     return paradas.sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'RECOLECTADO' ? -1 : 1) || orden[a.g.zona] - orden[b.g.zona]);
   }
@@ -225,7 +230,7 @@
   function siguienteFolio() { return 'OR-' + pad(db.recolecciones.length + 1, 5); }
 
   // Paso 4–5 del pipeline: el recolector guarda la entrega (estatus EN PROCESO)
-  function registrarEntrega({ idGenerador, litros, foto, recolector }) {
+  function registrarEntrega({ idGenerador, litros, foto, recolector, idRecolector }) {
     const cfg = db.config;
     const r = rng(Date.now() & 0xffffffff);
     const ahora = new Date();
@@ -233,7 +238,7 @@
       id: hex8(r), idGenerador, fecha: iso(ahora), litros: +litros,
       pago: +(litros * cfg.precio_litro).toFixed(2), agua: Math.round(litros * cfg.factor_agua), precio: cfg.precio_litro,
       foto: foto || null, estatus: 'EN PROCESO', claveRastreo: null, folio: siguienteFolio(), fechaLiquidacion: null,
-      estadoLote: 'PENDIENTE', idLote: null, recolector: recolector || cfg.recolector, pipeline: null,
+      estadoLote: 'PENDIENTE', idLote: null, recolector: recolector || cfg.recolector, idRecolector: idRecolector || 'OR-01', pipeline: null,
     };
     db.recolecciones.push(item);
     db.solicitudes.filter(s => s.idGenerador === idGenerador && s.estado === 'ABIERTA').forEach(s => s.estado = 'ATENDIDA');
@@ -372,7 +377,7 @@
   function setConfig(c) { Object.assign(db.config, c); save(); }
 
   window.OleoDB = {
-    load, save, reset, get db() { return db; }, ZONAS, COLONIAS, coloniaPermitida, iso,
+    load, save, reset, get db() { return db; }, ZONAS, COLONIAS, coloniaPermitida, iso, deRecolector,
     gen, rec, recsDe, zonas, zona, resumen, nivelEstimado, rutaDelDia,
     registrarEntrega, liquidar, enviarLote, altaGenerador, siguienteId, solicitar, setConfig,
     TIPOS, desdeHoja, upsertGenerador, distanciaKm, coloniaCercana, coloniaDePunto,

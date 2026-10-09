@@ -86,6 +86,8 @@
   const yoRec = () => { const s = getSession(); return s && s.role === 'R' && s.id ? s : null; };
   const recNombre = () => { const r = yoRec(); return r ? r.nombre : cfg().recolector; };
   const recEtiqueta = () => { const r = yoRec(); return r ? `${r.id} · ${r.nombre}` : cfg().recolector; };
+  const recId = () => (yoRec() || {}).id || 'OR-01';
+  const esMio = (r) => D.deRecolector(r, recId());     // entregas del recolector con sesión
 
   function cuentaSheet() {
     const s = getSession() || {};
@@ -426,7 +428,7 @@
     const ruta = D.rutaDelDia();
     const hechos = ruta.filter(p => p.estado === 'RECOLECTADO');
     const pend = ruta.filter(p => p.estado === 'PENDIENTE');
-    const litrosHoy = db().recolecciones.filter(r => new Date(r.fecha) >= hoy0()).reduce((s, r) => s + r.litros, 0);
+    const litrosHoy = db().recolecciones.filter(r => esMio(r) && new Date(r.fecha) >= hoy0()).reduce((s, r) => s + r.litros, 0);
     const zs = D.zonas();
     const listos = zs.filter(z => z.estatus === 'LISTO PARA PLANTA');
     const next = pend[0];
@@ -599,7 +601,7 @@
       <div class="card">
         <div class="between"><span class="label">Contenedor · nivel estimado</span><span class="num" style="font-weight:600">${fmt.L(n.litros)} / ${g.contenedor} L</span></div>
         <div class="mt8">${gauge(n.pct)}</div>
-        <div class="gauge-legend"><span>Última entrega ${rs[0] ? fmt.fecha(rs[0].fecha) : '—'}</span><span>Próxima ${fmt.fecha(n.proxima)}</span></div>
+        <div class="gauge-legend"><span>Última entrega ${rs[0] ? fmt.fecha(rs[0].fecha) : '—'}</span><span>${n.proxima ? 'Próxima ' + fmt.fecha(n.proxima) : 'Sin recolecciones aún'}</span></div>
       </div>
       <div class="grid2">
         <div class="tile"><span class="label">Litros / semana</span><div class="v num">${fmt.n1(g.litrosSemana)}<small>L</small></div></div>
@@ -678,7 +680,7 @@
       };
       $('#ok').onclick = () => {
         if (!(litros > 0)) { U.toast('Con 0 L la entrega no se guarda', 'alert'); return; }
-        const r = D.registrarEntrega({ idGenerador: id, litros, foto: foto === 'demo' ? null : foto, recolector: recEtiqueta() });
+        const r = D.registrarEntrega({ idGenerador: id, litros, foto: foto === 'demo' ? null : foto, recolector: recEtiqueta(), idRecolector: recId() });
         go(`#/r/confirmacion/${r.id}`);
       };
       upd();
@@ -868,25 +870,30 @@
   }
   function RTablero(q) {
     setTimeout(() => { cargarNube(); const b = app.querySelector('#nubeR'); if (b) b.onclick = cargarNube; });
-    const per = q.p || 'todo';
+    const per = q.p || 'todo', vista = q.v === 'todas' ? 'todas' : 'mias';
+    const filtro = vista === 'todas' ? () => true : esMio;
     const desde = per === '7' ? new Date(Date.now() - 7 * 86400000) : per === '30' ? new Date(Date.now() - 30 * 86400000) : null;
-    const R = D.resumen(desde);
-    const dias = desde ? (Date.now() - desde) / 86400000 : Math.max(7, (Date.now() - new Date(db().recolecciones.reduce((m, r) => r.fecha < m ? r.fecha : m, '9999'))) / 86400000);
+    const R = D.resumen(desde, filtro);
+    const recs = db().recolecciones.filter(filtro);
+    const dias = desde ? (Date.now() - desde) / 86400000 : Math.max(7, recs.length ? (Date.now() - new Date(recs.reduce((m, r) => r.fecha < m ? r.fecha : m, '9999'))) / 86400000 : 7);
     const ingresoMes = R.activos ? R.pago / R.activos / dias * 30 : 0;
     const zs = D.zonas();
-    const rank = db().generadores.map(g => ({ g, l: db().recolecciones.filter(r => r.idGenerador === g.id && (!desde || new Date(r.fecha) >= desde)).reduce((s, r) => s + r.litros, 0) })).sort((a, b) => b.l - a.l);
+    const rank = db().generadores.map(g => ({ g, l: recs.filter(r => r.idGenerador === g.id && (!desde || new Date(r.fecha) >= desde)).reduce((s, r) => s + r.litros, 0) })).filter(x => x.l > 0).sort((a, b) => b.l - a.l);
+    const url = (o) => `#/r/tablero?p=${o.p || per}&v=${o.v || vista}`;
     const maxL = Math.max(1, ...rank.map(x => x.l));
     return `<div class="screen">
       ${top('Tablero de impacto', '#/r/inicio')}
-      <div class="seg">${[['7', '7 días'], ['30', '30 días'], ['todo', 'Todo']].map(([k, l]) => `<a class="${per === k ? 'on' : ''}" href="#/r/tablero?p=${k}">${l}</a>`).join('')}</div>
-      <div class="hero" style="margin-top:14px"><div class="label">Litros recolectados</div><div class="big num" style="margin-top:8px">${fmt.n1(R.litros)}<small>L</small></div><div class="cap">${R.entregas} entregas · ${R.activos} generadores activos</div></div>
+      <div class="seg">${[['mias', 'Mis entregas'], ['todas', 'Toda la operación']].map(([k, l]) => `<a class="${vista === k ? 'on' : ''}" href="${url({ v: k })}">${l}</a>`).join('')}</div>
+      <div class="seg">${[['7', '7 días'], ['30', '30 días'], ['todo', 'Todo']].map(([k, l]) => `<a class="${per === k ? 'on' : ''}" href="${url({ p: k })}">${l}</a>`).join('')}</div>
+      ${vista === 'mias' && !recs.length ? `<div class="card oil small mt16">${icon('info').replace('<svg', '<svg style="width:16px;height:16px;vertical-align:-3px;color:var(--oil)"')} <b>Aún no tienes entregas.</b> <span class="muted">Tus números empiezan en 0 y crecen con cada recolección que registres.</span></div>` : ''}
+      <div class="hero" style="margin-top:14px"><div class="label">${vista === 'mias' ? 'Litros que recolectaste' : 'Litros recolectados · toda la operación'}</div><div class="big num" style="margin-top:8px">${fmt.n1(R.litros)}<small>L</small></div><div class="cap">${R.entregas} entregas · ${R.activos} generadores activos</div></div>
       <div class="grid2">
         <div class="tile oil">${icon('water', 'ti')}<div class="v num">${fmt.agua(R.agua)}</div><div class="d">agua protegida</div></div>
         <div class="tile">${icon('peso', 'ti')}<div class="v num">${fmt.mxn0(R.pago)}</div><div class="d">pagado a generadores</div></div>
-        <div class="tile">${icon('factory', 'ti')}<div class="v num">${R.lotes}</div><div class="d">lotes ≥ ${cfg().umbral_lote} L a planta</div></div>
+        <div class="tile">${icon('factory', 'ti')}<div class="v num">${R.lotes}</div><div class="d">lotes a planta${vista === 'mias' ? ' con tu aceite' : ''}</div></div>
         <div class="tile">${icon('zap', 'ti')}<div class="v num">${fmt.n1(R.liquidacionSeg)}<small>s</small></div><div class="d">liquidación promedio</div></div>
       </div>
-      <div class="card"><div class="between"><span class="label">Litros por semana</span><span class="small muted">últimas 8 semanas</span></div>${U.bars(semanas(8))}</div>
+      <div class="card"><div class="between"><span class="label">Litros por semana</span><span class="small muted">últimas 8 semanas</span></div>${U.bars(semanas(8, filtro))}</div>
       <div class="section-title"><span class="label">Negocio</span></div>
       <div class="rows">
         ${kvRow('Ticket promedio por entrega', fmt.mxn(R.ticket))}
@@ -898,7 +905,7 @@
       <div class="rows">
         ${kvRow('Aceite desviado del drenaje', fmt.L(R.litros))}
         ${kvRow('Agua protegida (× ' + fmt.n(cfg().factor_agua) + ')', fmt.n(R.agua) + ' L')}
-        ${kvRow('Enviado a biodiésel (' + esc(cfg().recicladora) + ')', fmt.L(db().lotes.filter(l => !desde || new Date(l.fechaEnvio) >= desde).reduce((s, l) => s + l.litros, 0)))}
+        ${kvRow('Enviado a biodiésel (' + esc(cfg().recicladora) + ')', fmt.L(R.aPlanta))}
       </div>
       <div class="section-title"><span class="label">Social</span></div>
       <div class="rows">
@@ -908,9 +915,10 @@
       </div>
       <div class="section-title"><span class="label">Lotes por zona</span></div>
       <div class="rows">${zs.map(z => zonaRow(z)).join('')}</div>
-      <div class="section-title"><span class="label">En la nube · Google Sheets</span><button id="nubeR">Actualizar</button></div>
-      <div class="card" id="nube"><div class="muted small">Leyendo BD_OleoRuta…</div></div>
+      ${vista === 'todas' ? `<div class="section-title"><span class="label">En la nube · Google Sheets</span><button id="nubeR">Actualizar</button></div>
+      <div class="card" id="nube"><div class="muted small">Leyendo BD_OleoRuta…</div></div>` : ''}
       <div class="section-title"><span class="label">Generadores por litros</span></div>
+      ${rank.length ? '' : '<div class="rows"><div class="empty">Sin entregas en este periodo.</div></div>'}
       <div class="rows">${rank.map(x => `<a class="row" href="#/r/puesto/${x.g.id}" style="display:block"><div class="between"><span class="small" style="font-weight:500">${esc(x.g.nombre)}</span><span class="small num">${fmt.L(x.l)}</span></div><div class="mt8">${gauge(x.l / maxL, 'thin')}</div></a>`).join('')}</div>
     </div>${tabbarR('tablero')}`;
   }
@@ -964,7 +972,7 @@
   function RMonitor(q) {
     const wide = q.wide === '1';
     if (wide) document.body.classList.add('wide');
-    const rs = db().recolecciones.slice().sort((a, b) => b.fecha.localeCompare(a.fecha));
+    const rs = db().recolecciones.filter(esMio).sort((a, b) => b.fecha.localeCompare(a.fecha));
     const ok = rs.filter(r => r.estatus === 'LIQUIDADO');
     const avg = ok.reduce((s, r) => s + (r.pipeline ? r.pipeline.total : 0), 0) / Math.max(1, ok.length) / 1000;
     const last = rs[0], lg = last && D.gen(last.idGenerador);
@@ -998,7 +1006,7 @@
       </div>
       <div>
         <div class="section-title ${wide ? 'mt0' : ''}" style="${wide ? 'margin-top:14px' : ''}"><span class="label">Historial de ejecuciones</span><span class="small muted">toca para ver el JSON</span></div>
-        <div class="card flush">${runs}</div>
+        <div class="card flush">${runs || '<div class="empty">Aún no hay ejecuciones. Aparecerán aquí cuando registres tu primera entrega.</div>'}</div>
         <a class="btn ghost small mt16" href="${window.OleoCloud ? OleoCloud.sheetUrl() : '#'}" target="_blank" rel="noopener noreferrer">${icon('sheet')}Abrir BD_OleoRuta en Google Sheets</a>
       </div>
       </div>
@@ -1103,7 +1111,7 @@
     const html = `<div class="screen">
       <div class="brand-head"><div style="min-width:0"><h1>${esc(g.nombre)}</h1><div class="sub"><span class="dot ${sol ? '' : 'ok'}"></span>${sol ? 'Aviso enviado · recolector en camino' : `${g.id} · ${esc(g.colonia)}`}</div></div><button class="avatar" id="sw" aria-label="Tu cuenta">${fmt.iniciales(g.nombre)}</button></div>
       <div class="hero"><div class="hero-row">${U.bidon(n.pct, { tambo: g.contenedor > 50 })}
-        <div class="hero-stat"><div class="label">Nivel estimado</div><div class="big num" style="font-size:54px;margin-top:6px">${fmt.n1(n.litros)}<small>L</small></div><div class="cap">de ${g.contenedor} L · ${fmt.pct(n.pct)}</div><div class="status-line mt16">${icon('truck').replace('<svg', '<svg style="width:15px;height:15px;color:var(--oil)"')}<span>Próxima <b>${fmt.fecha(n.proxima)}</b></span></div></div></div>
+        <div class="hero-stat"><div class="label">Nivel estimado</div><div class="big num" style="font-size:54px;margin-top:6px">${fmt.n1(n.litros)}<small>L</small></div><div class="cap">de ${g.contenedor} L · ${fmt.pct(n.pct)}</div><div class="status-line mt16">${icon('truck').replace('<svg', '<svg style="width:15px;height:15px;color:var(--oil)"')}<span>${n.proxima ? `Próxima <b>${fmt.fecha(n.proxima)}</b>` : '<b>Cuenta nueva</b> · sin recolecciones'}</span></div></div></div>
       </div>
       <div class="mt16">${gauge(n.pct)}</div>
       <div class="gauge-legend"><span>Última entrega ${last ? fmt.rel(last.fecha) : '—'}</span><span>${fmt.n1(g.litrosSemana)} L por semana</span></div>
@@ -1123,7 +1131,7 @@
         <div class="tile">${icon('drop', 'ti')}<div class="v num">${fmt.n1(rs.reduce((s, r) => s + r.litros, 0))}<small>L</small></div><div class="d">reciclados en total</div></div>
         <div class="tile oil">${icon('water', 'ti')}<div class="v num">${fmt.agua(totAgua)}</div><div class="d">de agua protegida</div></div>
       </div>
-      <div class="section-title"><span class="label">Lote de tu zona · ${g.zona}</span></div>
+      <div class="section-title"><span class="label">Lote de tu zona · ${g.zona}</span><span class="small muted">todos los puestos</span></div>
       <div class="rows">${zonaRow(z, `#/g/${g.id}/impacto`)}</div>
       <div class="rows">
         ${row(`#/g/${g.id}/entregas`, 'receipt', 'Entregas y comprobantes', `${rs.length} entregas · ${fmt.mxn0(totPago)} recibidos`)}
