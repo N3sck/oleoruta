@@ -352,11 +352,103 @@ table.t td.r, table.t th.r { text-align: right; }
 .seg button.on, .seg a.on { background: var(--card-3); color: var(--text); }
 
 /* ---------- consola amplia (monitor en escritorio) ---------- */
-@media (min-width: 900px) {
+@media (min-width: 900px) and (max-width: 1023px) {
   body.wide #app { max-width: 1280px; }
   body.wide .tabbar { display: none; }
   body.wide .screen { padding-bottom: 30px; }
   body.wide .console-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; align-items: start; }
+}
+
+/* =====================================================================
+   Pantallas medianas (tablet) y computadora
+   ===================================================================== */
+.tabbar .side-brand, .tabbar .side-foot { display: none; }
+
+@media (min-width: 700px) and (max-width: 1023px) {
+  #app, .tabbar, .sheet { max-width: 640px; }
+}
+
+@media (min-width: 1024px) {
+  body { background: radial-gradient(1400px 700px at 70% -20%, #1a1508 0%, #000 60%) fixed; }
+  #app { max-width: none; margin: 0; border: 0; box-shadow: none; background: transparent; }
+  #app:has(> .tabbar) { padding-left: 260px; }
+
+  /* barra lateral */
+  .tabbar { top: 0; bottom: 0; left: 0; transform: none; width: 260px; max-width: none; height: 100vh; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 26px 16px 18px; background: rgba(8, 8, 9, .92); border-top: 0; border-right: 1px solid var(--line); }
+  .tabbar .side-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 22px; order: -2; }
+  .side-brand svg { width: 36px; height: 36px; flex: none; }
+  .side-brand b { font-size: 21px; letter-spacing: -.02em; }
+  .side-brand b span { color: var(--oil); }
+  .tabbar a { flex-direction: row; justify-content: flex-start; gap: 14px; font-size: 15px; padding: 12px 14px; border-radius: 12px; color: var(--text-2); transition: background .15s, color .15s; }
+  .tabbar a svg { width: 20px; height: 20px; }
+  .tabbar a:hover { background: var(--card); color: var(--text); }
+  .tabbar a.on { background: var(--oil-dim); color: var(--oil); }
+  .tabbar a.fab { order: -1; margin: 0 0 16px; background: var(--oil); color: #111; font-weight: 700; justify-content: center; box-shadow: 0 8px 28px rgba(255, 194, 26, .22); }
+  .tabbar a.fab:hover { background: var(--oil-2); color: #111; }
+  .tabbar a.fab.on { color: #111; }
+  .tabbar a.fab .fabc { width: auto; height: auto; background: none; box-shadow: none; color: #111; }
+  .tabbar a.fab .fabc svg { width: 20px; height: 20px; }
+  .tabbar .side-foot { display: flex; align-items: center; gap: 12px; margin-top: auto; padding: 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); text-align: left; }
+  .side-foot:hover { border-color: var(--line-2); }
+  .side-foot .avatar { width: 36px; height: 36px; font-size: 13px; }
+  .side-foot .avatar svg { width: 18px; height: 18px; }
+  .side-foot .rt { flex: 1; min-width: 0; }
+  .side-foot b { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-foot .rt span { display: block; font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+  /* contenido */
+  .screen { max-width: 780px; margin: 0 auto; padding: 36px 44px 56px; }
+  .screen:has(.d-cols), .screen:has(.console-grid) { max-width: 1200px; }
+  .screen:has(.receipt) { max-width: 620px; }
+  #app:not(:has(> .tabbar)) .screen { max-width: 600px; padding-top: 44px; }
+  .brand-head h1 { font-size: 34px; }
+  .hero { margin: 6px 0 0; padding: 8px 0 0; }
+
+  /* encabezado del panel: ilustración a la izquierda, datos a la derecha */
+  .d-head:has(> .hero svg.art) { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); column-gap: 40px; align-items: start; }
+  .d-head:has(> .hero svg.art) > * { grid-column: 2; }
+  .d-head:has(> .hero svg.art) > .brand-head, .d-head:has(> .hero svg.art) > .topbar, .d-head:has(> .hero svg.art) > .seg { grid-column: 1 / -1; }
+  .d-head:has(> .hero svg.art) > .hero { grid-column: 1; grid-row: span 8; align-self: center; }
+  .d-head .hero svg.art { max-width: 460px; }
+  .d-head .quick { margin-top: 26px; }
+  .d-head:not(:has(> .hero svg.art)) > .grid2 { grid-template-columns: repeat(4, 1fr); }
+  .d-cols { column-count: 2; column-gap: 28px; margin-top: 10px; }
+  .d-block { break-inside: avoid; -webkit-column-break-inside: avoid; display: inline-block; width: 100%; margin-bottom: 18px; }
+  .d-block > .section-title:first-child { margin-top: 18px; }
+  .grid2 { gap: 14px; }
+  .console-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; align-items: start; }
+  .labels { grid-template-columns: repeat(3, 1fr); }
+  #app .tipos { margin: 0; padding: 2px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); overflow: visible; }
+  #app .tipo { width: auto; }
+  .chart svg { max-height: 270px; }
+  .only-touch { display: none; }
+
+  /* acceso: pantalla dividida */
+  .login.auth { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 72px; max-width: 1180px; margin: 0 auto; min-height: 100vh; align-items: center; padding: 48px 56px; }
+  .auth-hero h2 { font-size: 62px; margin-top: 46px; }
+  .auth-hero .lead { font-size: 18px; max-width: 520px; }
+  .auth-art { margin-top: 40px; max-width: 520px; }
+  .auth-art svg.art { width: 100%; }
+  .auth-kpis { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .auth-kpis span { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: 14px; }
+  .auth-kpis svg { width: 18px; height: 18px; color: var(--oil); }
+  .auth-hero { position: sticky; top: 48px; align-self: start; }
+  .auth-panel { background: rgba(18, 18, 20, .82); border: 1px solid var(--line-2); border-radius: 28px; padding: 30px 30px 26px; box-shadow: 0 30px 80px rgba(0, 0, 0, .5); }
+  .auth-panel .auth-tabs { margin-top: 0; }
+  .login.center { max-width: 520px; margin: 0 auto; padding-top: 80px; }
+
+  /* hojas → ventanas centradas */
+  .sheet { top: 50%; bottom: auto; transform: translate(-50%, -50%); max-width: 460px; border-radius: 24px; border: 1px solid var(--line-2); animation: fadein .2s ease; padding-bottom: 24px; }
+  .sheet .grab { display: none; }
+  .toast { top: 24px; }
+}
+
+@media (hover: hover) {
+  .row:hover, .acct:hover { background: var(--card-2); }
+  .btn:hover { filter: brightness(1.06); }
+  .chip:hover, .seg a:hover, .seg button:hover { color: var(--text); }
+  .icon-btn:hover { background: var(--card-2); }
+  .tipo:hover { border-color: rgba(255, 194, 26, .5); }
 }
 
 @media print {

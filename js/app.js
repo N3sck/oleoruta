@@ -39,17 +39,21 @@
   const top = (title, back, right = '<div class="spacer40"></div>') =>
     `<div class="topbar">${back ? `<a class="icon-btn" href="${back}" aria-label="Regresar">${icon('back')}</a>` : '<div class="spacer40"></div>'}<div class="title">${title}</div>${right}</div>`;
 
+  const sideBrand = () => `<a class="side-brand" href="#/">${U.logo(34)}<b>Oleo<span>Ruta</span></b></a>`;
+  const sideFoot = (ini, nombre, sub, dark) => `<button class="side-foot" data-act="cuenta"><span class="avatar ${dark ? 'dark' : ''}">${ini}</span><span class="rt"><b>${esc(nombre)}</b><span>${esc(sub)}</span></span>${icon('more', 'chev')}</button>`;
   function tabbarR(on) {
     const t = [['inicio', 'home', 'Inicio'], ['ruta', 'route', 'Ruta'], ['escanear', 'scan', 'Escanear'], ['tablero', 'chart', 'Tablero'], ['mas', 'more', 'Más']];
-    return `<nav class="tabbar">${t.map(([k, i, l]) => k === 'escanear'
+    const r = getSession() || {};
+    return `<nav class="tabbar">${sideBrand()}${t.map(([k, i, l]) => k === 'escanear'
       ? `<a class="fab ${on === k ? 'on' : ''}" href="#/r/${k}"><span class="fabc">${icon(i)}</span>${l}</a>`
-      : `<a class="${on === k ? 'on' : ''}" href="#/r/${k}">${icon(i)}${l}</a>`).join('')}</nav>`;
+      : `<a class="${on === k ? 'on' : ''}" href="#/r/${k}">${icon(i)}${l}</a>`).join('')}${sideFoot(icon('truck'), r.nombre || cfg().recolector, 'Recolector · ' + (r.id || 'pruebas'), true)}</nav>`;
   }
   function tabbarG(id, on) {
     const t = [['inicio', 'home', 'Inicio'], ['entregas', 'receipt', 'Entregas'], ['qr', 'qr', 'Mi QR'], ['impacto', 'leaf', 'Impacto'], ['perfil', 'user', 'Perfil']];
-    return `<nav class="tabbar">${t.map(([k, i, l]) => k === 'qr'
+    const g = D.gen(id) || { nombre: id };
+    return `<nav class="tabbar">${sideBrand()}${t.map(([k, i, l]) => k === 'qr'
       ? `<a class="fab ${on === k ? 'on' : ''}" href="#/g/${id}/${k}"><span class="fabc">${icon(i)}</span>${l}</a>`
-      : `<a class="${on === k ? 'on' : ''}" href="#/g/${id}/${k}">${icon(i)}${l}</a>`).join('')}</nav>`;
+      : `<a class="${on === k ? 'on' : ''}" href="#/g/${id}/${k}">${icon(i)}${l}</a>`).join('')}${sideFoot(fmt.iniciales(g.nombre), g.nombre, 'Negocio · ' + id)}</nav>`;
   }
   const row = (href, ic, title, sub = '', val = '', valSub = '') =>
     `<a class="row" href="${href}"><span class="ri">${icon(ic)}</span><span class="rt"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</span>${val ? `<span class="rv">${val}${valSub ? `<span>${valSub}</span>` : ''}</span>` : ''}${icon('chev', 'chev')}</a>`;
@@ -244,7 +248,7 @@
   function formAlta(prefijo) {
     return `
       <div class="field"><label>Nombre del negocio</label><div class="inp">${icon('store')}<input name="nombre" maxlength="60" placeholder="Ej. Tortas La Güera" autocapitalize="words"></div><div class="hint">Será tu contraseña para iniciar sesión.</div></div>
-      <div class="field"><label>Tipo de negocio <span class="muted">· desliza para ver más</span></label>
+      <div class="field"><label>Tipo de negocio <span class="muted only-touch">· desliza para ver más</span></label>
         <div class="tipos" id="${prefijo}tipos">${D.TIPOS.map((t, i) => `<button type="button" class="tipo ${i === 0 ? 'on' : ''}" data-tipo="${esc(t.valor)}"><span class="ti">${icon(/Tianguis/.test(t.valor) ? 'layers' : t.valor === 'Fonda' ? 'home' : t.valor === 'Otro' ? 'more' : 'store')}</span><b>${t.corto}</b><span>≈ ${t.litros} L/sem</span></button>`).join('')}</div></div>
       <div class="field"><label>Nombre del responsable</label><div class="inp">${icon('user')}<input name="responsable" maxlength="40" placeholder="Nombre y apellido" autocapitalize="words"></div></div>
       <div class="field"><label>Teléfono (WhatsApp)</label><div class="inp">${icon('phone')}<input name="telefono" inputmode="numeric" maxlength="14" autocomplete="tel-national" placeholder="10 dígitos"></div></div>
@@ -1180,7 +1184,35 @@
     app.innerHTML = html;
     after();
   }
+  // Computadora: secciones en 2 columnas y acceso en pantalla dividida (en celular no cambia nada)
+  const DESK = window.matchMedia('(min-width: 1024px)');
+  function layoutDesk() {
+    if (!DESK.matches) return;
+    const lg = app.querySelector('.login:not(.center)');
+    if (lg && !lg.querySelector('.auth-panel')) {
+      const hero = document.createElement('div'); hero.className = 'auth-hero';
+      const panel = document.createElement('div'); panel.className = 'auth-panel';
+      [...lg.children].forEach(c => (c.matches('.logo, .between, h2, .lead') ? hero : panel).appendChild(c));
+      hero.insertAdjacentHTML('beforeend', `<div class="auth-art">${U.van(84, 120)}<div class="auth-kpis"><span>${icon('drop')}Pago inmediato por litro</span><span>${icon('water')}1 L de aceite = 1,000 L de agua protegidos</span><span>${icon('factory')}Lotes de 20 L a biodiésel</span></div></div>`);
+      lg.classList.add('auth'); lg.append(hero, panel);
+    }
+    const sc = app.querySelector('.screen');
+    if (!sc || sc.querySelector('.d-cols')) return;
+    const kids = [...sc.children];
+    if (kids.filter(k => k.classList.contains('section-title')).length < 2) return;
+    const head = document.createElement('div'); head.className = 'd-head';
+    const cols = document.createElement('div'); cols.className = 'd-cols';
+    let cur = null;
+    kids.forEach(k => {
+      if (k.classList.contains('section-title')) { cur = document.createElement('section'); cur.className = 'd-block'; cols.appendChild(cur); }
+      (cur || head).appendChild(k);
+    });
+    sc.append(head, cols);
+  }
+  DESK.addEventListener ? DESK.addEventListener('change', () => render()) : DESK.addListener(() => render());
+
   function after() {
+    layoutDesk();
     U.bindCharts(app);
     const sw = app.querySelector('#sw'); if (sw) sw.onclick = cuentaSheet;
     window.scrollTo(0, 0);
@@ -1190,6 +1222,7 @@
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-act]'); if (!t) return;
     if (t.dataset.act === 'print') { e.preventDefault(); window.OleoPrint(); }
+    if (t.dataset.act === 'cuenta') { e.preventDefault(); cuentaSheet(); }
     if (t.dataset.act === 'logout') { try { localStorage.removeItem(SKEY); } catch (err) { } }
   });
   window.addEventListener('hashchange', render);
