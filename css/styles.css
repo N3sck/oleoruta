@@ -367,3 +367,31 @@ table.t td.r, table.t th.r { text-align: right; }
   .labels .qr-card { border: 1px dashed #999; break-inside: avoid; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- iniciar sesión / crear cuenta ---------- */
+.auth-tabs { margin-top: 26px; }
+.inp { position: relative; display: flex; align-items: center; }
+.inp > svg { position: absolute; left: 15px; width: 19px; height: 19px; color: var(--text-3); pointer-events: none; }
+.field .inp input { padding-left: 46px; }
+.inp:focus-within > svg { color: var(--oil); }
+.inp .eye { position: absolute; right: 8px; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: var(--text-3); }
+.inp .eye svg { width: 18px; height: 18px; }
+.tipos { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 2px 8px; margin: 0 -18px; padding-left: 18px; padding-right: 18px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.tipos::-webkit-scrollbar { display: none; }
+.tipo { flex: none; width: 104px; scroll-snap-align: center; background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 14px 10px 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: transform .15s, background .2s, border-color .2s; }
+.tipo .ti { width: 44px; height: 44px; border-radius: 14px; background: var(--card-3); display: grid; place-items: center; color: var(--oil); }
+.tipo .ti svg { width: 22px; height: 22px; }
+.tipo b { font-size: 14px; font-weight: 600; }
+.tipo span:last-child { font-size: 11px; color: var(--text-3); }
+.tipo.on { background: linear-gradient(160deg, rgba(255, 194, 26, .22), rgba(255, 194, 26, .06)), var(--card); border-color: var(--oil); }
+.tipo.on .ti { background: var(--oil); color: #111; }
+.tipo:active { transform: scale(.96); }
+.seg button.on { background: var(--card-3); color: var(--text); }
+.note { display: flex; gap: 10px; align-items: flex-start; background: var(--oil-dim); border: 1px solid rgba(255, 194, 26, .28); border-radius: 14px; padding: 12px 14px; font-size: 13px; line-height: 1.45; color: var(--text); }
+.note svg { width: 18px; height: 18px; color: var(--oil); flex: none; margin-top: 1px; }
+.note b { color: var(--oil); font-weight: 600; }
+.okmark { width: 78px; height: 78px; border-radius: 50%; background: var(--oil); color: #111; display: grid; place-items: center; margin: 10px auto 0; box-shadow: 0 0 50px var(--oil-glow); }
+.okmark svg { width: 38px; height: 38px; }
+.cred { background: var(--card); border: 1px solid var(--line-2); border-radius: 22px; padding: 20px; }
+.cred .cid { font-family: var(--mono); font-size: 40px; font-weight: 700; color: var(--oil); letter-spacing: .02em; margin-top: 6px; }
+.cred .cpass { font-size: 20px; font-weight: 600; margin-top: 6px; word-break: break-word; }

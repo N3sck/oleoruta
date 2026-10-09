@@ -218,14 +218,14 @@
   }
 
   // Pasos 8–10: respuesta de la API SPEI simulada y actualización de la fila
-  function liquidar(id, pipeline) {
+  function liquidar(id, pipeline, ext) {
     const item = rec(id);
     if (!item || item.estatus === 'LIQUIDADO') return item;
     const r = rng((Date.now() ^ 0x5bd1e995) >>> 0);
     const fl = new Date();
     item.estatus = 'LIQUIDADO';
-    item.claveRastreo = claveRastreo(fl, r);
-    item.fechaLiquidacion = iso(fl);
+    item.claveRastreo = (ext && ext.clave_rastreo) || claveRastreo(fl, r);
+    item.fechaLiquidacion = (ext && ext.fecha_liquidacion) ? String(ext.fecha_liquidacion).slice(0, 19) : iso(fl);
     item.pipeline = pipeline;
     save();
     return item;
@@ -247,6 +247,50 @@
     const g = { ...data, litrosSemana: +data.litrosSemana || 5, contenedor: data.tipo && /tianguis/i.test(data.tipo) ? 200 : 20, fechaAlta: iso(new Date()).slice(0, 10) };
     db.generadores.push(g); save(); return g;
   }
+  // Tipos de negocio (mismos valores que la columna «Tipo» y que el backend) con su consumo típico por semana
+  const TIPOS = [
+    { valor: 'Puesto de tacos', corto: 'Tacos', litros: 5 },
+    { valor: 'Puesto de quesadillas', corto: 'Quesadillas', litros: 15 },
+    { valor: 'Tacos de canasta', corto: 'Canasta', litros: 8 },
+    { valor: 'Fritanga', corto: 'Fritanga', litros: 5 },
+    { valor: 'Puesto de churros', corto: 'Churros', litros: 6 },
+    { valor: 'Fonda', corto: 'Fonda', litros: 10 },
+    { valor: 'Tianguis (contenedor fijo)', corto: 'Tianguis', litros: 40 },
+    { valor: 'Otro', corto: 'Otro', litros: 5 },
+  ];
+
+  function fechaISO(v) {
+    const s = String(v || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    return iso(new Date()).slice(0, 10);
+  }
+
+  // Fila de la hoja «Generadores» (o respuesta del alta) → generador local
+  function desdeHoja(r) {
+    const id = String(r.ID_Generador || r.id_generador || '').trim().toUpperCase();
+    if (!/^GEN-\d{3,4}$/.test(id)) return null;
+    const tipo = r.Tipo || r.tipo || 'Otro';
+    return {
+      id, nombre: String(r.Nombre_Negocio || r.nombre || '').trim(), tipo,
+      responsable: r.Responsable || r.responsable || '', telefono: String(r.Telefono || r.telefono || '').replace(/\D/g, ''),
+      colonia: r.Colonia || r.colonia || '', zona: r.Zona || r.zona || 'Narvarte',
+      litrosSemana: +(r.Litros_Semana || r.litros_semana) || 5, clabe: String(r.CLABE_Simulada || r.clabe || '').replace(/\D/g, ''),
+      fechaAlta: fechaISO(r.Fecha_Alta || r.fecha_alta), contenedor: /tianguis/i.test(tipo) ? 200 : 20,
+    };
+  }
+
+  // Agrega o actualiza un generador con los datos de la nube (no toca su historial)
+  function upsertGenerador(g) {
+    if (!g) return null;
+    const i = db.generadores.findIndex(x => x.id === g.id);
+    if (i < 0) db.generadores.push(g);
+    else db.generadores[i] = { ...db.generadores[i], ...g, contenedor: db.generadores[i].contenedor || g.contenedor };
+    save();
+    return gen(g.id);
+  }
+
   function siguienteId() {
     const max = db.generadores.reduce((m, g) => Math.max(m, parseInt(g.id.slice(4), 10) || 0), 0);
     return 'GEN-' + pad(max + 1, 3);
@@ -264,5 +308,6 @@
     load, save, reset, get db() { return db; }, ZONAS, iso,
     gen, rec, recsDe, zonas, zona, resumen, nivelEstimado, rutaDelDia,
     registrarEntrega, liquidar, enviarLote, altaGenerador, siguienteId, solicitar, setConfig,
+    TIPOS, desdeHoja, upsertGenerador,
   };
 })();

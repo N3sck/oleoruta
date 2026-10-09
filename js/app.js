@@ -20,6 +20,7 @@
     scanResult: (code) => handleCode(code),
     scanCancelled: () => { },
     scanUnavailable: () => U.toast('Cámara no disponible · usa la simulación', 'camera'),
+    fetchResult: (json) => window.OleoCloud && OleoCloud.fetchResultado(json),
   };
   const go = (h) => { location.hash = h; };
   const setSession = (s) => { try { localStorage.setItem(SKEY, JSON.stringify(s)); } catch (e) { } };
@@ -62,36 +63,155 @@
       <div class="gauge-legend"><span>${fmt.L(z.litrosPendientes)} de ${cfg().umbral_lote} L</span><span>${z.generadores.length} puestos · ${z.lotesEnviados} lotes enviados</span></div></a>`;
   }
 
-  function accountList() {
-    return `<div class="rows">
-      <button class="acct feature" data-acct="R"><span class="avatar dark">${icon('truck')}</span><span class="rt"><b>Recolector · ${esc(cfg().recolector)}</b><span>Opera la app en calle · Narvarte, Doctores y Portales</span></span>${icon('chev', 'chev')}</button>
-    </div>
-    <div class="section-title"><span class="label">Generadores (QR impreso)</span></div>
-    <div class="rows">${db().generadores.map(g => `<button class="acct" data-acct="${g.id}"><span class="avatar">${fmt.iniciales(g.nombre)}</span><span class="rt"><b>${esc(g.nombre)}</b><span>${g.id} · ${esc(g.tipo)} · ${g.zona}</span></span>${icon('chev', 'chev')}</button>`).join('')}</div>`;
-  }
-  function bindAccounts(root, after) {
-    root.querySelectorAll('[data-acct]').forEach(b => b.onclick = () => {
-      const a = b.dataset.acct; after && after();
-      if (a === 'R') { setSession({ role: 'R' }); go('#/r/inicio'); } else { setSession({ role: 'G', id: a }); go(`#/g/${a}/inicio`); }
-    });
-  }
-  function switchSheet() {
-    U.sheet(`<div class="between"><h3 style="margin:0;font-size:20px">Cambiar de cuenta</h3><button class="icon-btn" data-close>${icon('close')}</button></div><p class="muted small" style="margin:6px 0 0">Prototipo: cada cuenta muestra datos simulados distintos.</p>${accountList()}<div class="mt16"></div>`, (sh, close) => bindAccounts(sh, close));
+  // ======================================================
+  //  SESIÓN · iniciar sesión y crear cuenta
+  //  Usuario = ID_Generador · Contraseña = Nombre_Negocio (se validan contra la hoja «Generadores»)
+  // ======================================================
+  const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const normId = (t) => { const m = String(t || '').toUpperCase().match(/GEN\s*-?\s*(\d{1,4})/); return m ? 'GEN-' + m[1].padStart(3, '0') : null; };
+
+  // Trae las cuentas de la hoja y las agrega al teléfono (para iniciar sesión y para que el recolector las vea)
+  async function sincronizarCuentas() {
+    if (!window.OleoCloud) return false;
+    try { (await OleoCloud.hoja('Generadores')).forEach(r => D.upsertGenerador(D.desdeHoja(r))); return true; }
+    catch (e) { return false; }
   }
 
-  // ======================================================
-  //  INGRESO
-  // ======================================================
-  function Login() {
-    app.innerHTML = `<div class="login">
-      <div class="logo">${U.logo(44)}<b>Oleo<span>Ruta</span></b></div>
+  function cuentaSheet() {
+    const s = getSession() || {};
+    const g = s.role === 'G' ? D.gen(s.id) : null;
+    U.sheet(`<div class="between"><h3 style="margin:0;font-size:20px">Tu cuenta</h3><button class="icon-btn" data-close>${icon('close')}</button></div>
+      <div class="rows"><div class="acct">${g ? `<span class="avatar">${fmt.iniciales(g.nombre)}</span><span class="rt"><b>${esc(g.nombre)}</b><span>Usuario ${g.id} · ${g.zona}</span></span>` : `<span class="avatar dark">${icon('truck')}</span><span class="rt"><b>Recolector · ${esc(cfg().recolector)}</b><span>Operación en calle</span></span>`}</div></div>
+      <a class="btn ghost mt16" href="#/login" data-act="logout">${icon('logout')}Cerrar sesión</a>`);
+  }
+
+  function authHead(sub) {
+    return `<div class="logo">${U.logo(44)}<b>Oleo<span>Ruta</span></b></div>
       <h2>Cada litro de aceite,<br><em>pagado al instante.</em></h2>
-      <p class="lead">Consolidación y pago digital del aceite vegetal usado del comercio informal de la CDMX.</p>
-      <div class="section-title"><span class="label">Selecciona tu cuenta</span></div>
-      ${accountList()}
-      <p class="foot-note">Prototipo funcional MVP · Sprint 2<br>Datos simulados guardados en este dispositivo · funciona sin conexión</p>
+      <p class="lead">${sub}</p>`;
+  }
+  function authTabs(on) {
+    return `<div class="seg auth-tabs"><a class="${on === 'login' ? 'on' : ''}" href="#/login">Iniciar sesión</a><a class="${on === 'registro' ? 'on' : ''}" href="#/registro">Crear cuenta</a></div>`;
+  }
+
+  function Login(q) {
+    app.innerHTML = `<div class="login">
+      ${authHead('Entra con tu usuario y contraseña para ver tus pagos, tu QR y tu impacto.')}
+      ${authTabs('login')}
+      <form id="lf" novalidate autocomplete="on">
+        <div class="field"><label>Usuario (ID de generador)</label><div class="inp">${icon('user')}<input name="u" id="lu" placeholder="GEN-001" autocapitalize="characters" autocomplete="username" spellcheck="false" value="${esc(q.u || '')}"></div></div>
+        <div class="field"><label>Contraseña</label><div class="inp">${icon('shield')}<input name="p" id="lp" type="password" placeholder="Nombre de tu negocio" autocomplete="current-password"><button type="button" class="eye" id="eye" aria-label="Mostrar contraseña">${icon('eye')}</button></div>
+          <div class="hint">Tu contraseña es el nombre de tu negocio, tal como lo registraste.</div></div>
+        <div id="err"></div>
+        <button class="btn mt16" type="submit" id="go">${icon('check')}<span>Iniciar sesión</span></button>
+      </form>
+      <p class="center small muted mt16">¿Aún no tienes cuenta? <a href="#/registro" style="color:var(--oil);font-weight:600">Crea una aquí</a></p>
+      <div class="rows mt24"><button class="acct feature" id="rec"><span class="avatar dark">${icon('truck')}</span><span class="rt"><b>Acceso del recolector</b><span>Operación en calle · ${esc(cfg().recolector)}</span></span>${icon('chev', 'chev')}</button></div>
+      <p class="foot-note">Prototipo funcional MVP · Sprint 2<br>Cuentas guardadas en Google Sheets · BD_OleoRuta</p>
     </div>`;
-    bindAccounts(app);
+    const f = app.querySelector('#lf'), err = app.querySelector('#err'), btn = app.querySelector('#go');
+    app.querySelector('#eye').onclick = () => { const p = app.querySelector('#lp'); p.type = p.type === 'password' ? 'text' : 'password'; };
+    app.querySelector('#rec').onclick = () => { setSession({ role: 'R' }); go('#/r/inicio'); };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const id = normId(f.u.value), pass = f.p.value;
+      const fail = (m) => { err.innerHTML = `<div class="field"><div class="err">${m}</div></div>`; haptic('light'); };
+      if (!id) return fail('Escribe tu usuario, por ejemplo GEN-001.');
+      if (!pass.trim()) return fail('Escribe tu contraseña (el nombre de tu negocio).');
+      btn.disabled = true; btn.querySelector('span').textContent = 'Verificando…'; err.innerHTML = '';
+      await sincronizarCuentas();
+      btn.disabled = false; btn.querySelector('span').textContent = 'Iniciar sesión';
+      const g = D.gen(id);
+      if (!g) return fail(`No encontramos la cuenta ${id}. Revisa tu usuario o crea una cuenta nueva.`);
+      if (norm(pass) !== norm(g.nombre)) return fail('La contraseña no coincide. Recuerda: es el nombre de tu negocio.');
+      haptic('success');
+      setSession({ role: 'G', id: g.id });
+      go(`#/g/${g.id}/inicio`);
+    };
+  }
+
+  // Formulario de alta (lo usan «Crear cuenta» y el alta de puesto del recolector)
+  function formAlta(prefijo) {
+    return `
+      <div class="field"><label>Nombre del negocio</label><div class="inp">${icon('store')}<input name="nombre" maxlength="60" placeholder="Ej. Tortas La Güera" autocapitalize="words"></div><div class="hint">Será tu contraseña para iniciar sesión.</div></div>
+      <div class="field"><label>Tipo de negocio <span class="muted">· desliza para ver más</span></label>
+        <div class="tipos" id="${prefijo}tipos">${D.TIPOS.map((t, i) => `<button type="button" class="tipo ${i === 0 ? 'on' : ''}" data-tipo="${esc(t.valor)}"><span class="ti">${icon(/Tianguis/.test(t.valor) ? 'layers' : t.valor === 'Fonda' ? 'home' : t.valor === 'Otro' ? 'more' : 'store')}</span><b>${t.corto}</b><span>≈ ${t.litros} L/sem</span></button>`).join('')}</div></div>
+      <div class="field"><label>Nombre del responsable</label><div class="inp">${icon('user')}<input name="responsable" maxlength="40" placeholder="Nombre y apellido" autocapitalize="words"></div></div>
+      <div class="field"><label>Teléfono (WhatsApp)</label><div class="inp">${icon('phone')}<input name="telefono" inputmode="numeric" maxlength="14" autocomplete="tel-national" placeholder="10 dígitos"></div></div>
+      <div class="field"><label>Colonia</label><div class="inp">${icon('pin')}<input name="colonia" maxlength="40" placeholder="Ej. Narvarte Oriente" autocapitalize="words"></div></div>
+      <div class="field"><label>Zona de recolección</label><div class="seg mt0" id="${prefijo}zona">${D.ZONAS.map((z, i) => `<button type="button" class="${i === 0 ? 'on' : ''}" data-zona="${z.zona}">${z.zona}</button>`).join('')}</div></div>`;
+  }
+  function bindAlta(root, prefijo, onDone) {
+    const f = root.querySelector('form'), err = root.querySelector('#err'), btn = root.querySelector('button[type=submit]');
+    let tipo = D.TIPOS[0].valor, zona = D.ZONAS[0].zona;
+    root.querySelectorAll(`#${prefijo}tipos .tipo`).forEach(b => b.onclick = () => {
+      root.querySelectorAll(`#${prefijo}tipos .tipo`).forEach(x => x.classList.remove('on')); b.classList.add('on'); tipo = b.dataset.tipo; haptic('light');
+      b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    });
+    root.querySelectorAll(`#${prefijo}zona button`).forEach(b => b.onclick = () => {
+      root.querySelectorAll(`#${prefijo}zona button`).forEach(x => x.classList.remove('on')); b.classList.add('on'); zona = b.dataset.zona;
+    });
+    f.telefono.oninput = () => { f.telefono.value = f.telefono.value.replace(/\D/g, '').slice(0, 10); };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const d = { nombre: f.nombre.value.trim().replace(/\s+/g, ' '), tipo, responsable: f.responsable.value.trim(), telefono: f.telefono.value, colonia: f.colonia.value.trim(), zona };
+      const faltan = [];
+      if (d.nombre.length < 3) faltan.push('el nombre del negocio (mínimo 3 letras)');
+      if (d.responsable.length < 2) faltan.push('el nombre del responsable');
+      if (!/^\d{10}$/.test(d.telefono)) faltan.push('un teléfono de 10 dígitos');
+      if (d.colonia.length < 2) faltan.push('la colonia');
+      const fail = (m) => { err.innerHTML = `<div class="field"><div class="err">${m}</div></div>`; haptic('light'); };
+      if (faltan.length) return fail('Falta ' + faltan.join(', ') + '.');
+      if (db().generadores.some(g => norm(g.nombre) === norm(d.nombre))) return fail('Ya existe una cuenta con ese nombre de negocio.');
+      if (!window.OleoCloud || !OleoCloud.enabled()) return fail('Se necesita conexión a internet para crear la cuenta.');
+      btn.disabled = true; const txt = btn.querySelector('span').textContent; btn.querySelector('span').textContent = 'Creando cuenta…'; err.innerHTML = '';
+      let r;
+      try { r = await OleoCloud.alta(d); } catch (e2) { r = { ok: false, data: { error: e2.name === 'AbortError' ? 'El servidor tardó demasiado en responder.' : 'No se pudo conectar con el servidor.' } }; }
+      btn.disabled = false; btn.querySelector('span').textContent = txt;
+      if (!r.ok) {
+        const viejo = r.data && /litros fuera de rango|ID de generador inválido/.test(r.data.error || '');
+        const m = viejo ? 'El servidor aún no tiene activada la creación de cuentas (falta publicar la nueva versión del Apps Script).' : (r.data && r.data.error) || 'No se pudo crear la cuenta. Intenta de nuevo.';
+        return fail(m);
+      }
+      const g = D.upsertGenerador(D.desdeHoja(r.data.generador));
+      haptic('success');
+      onDone(g);
+    };
+  }
+
+  function Registro() {
+    app.innerHTML = `<div class="login">
+      ${authHead('Registra tu negocio para recibir pagos digitales por tu aceite usado.')}
+      ${authTabs('registro')}
+      <form id="rf" novalidate>
+        ${formAlta('r')}
+        <div class="note mt16">${icon('info')}<span>Tu <b>usuario</b> será tu ID de generador (se asigna en orden) y tu <b>contraseña</b> será el <b>nombre de tu negocio</b>.</span></div>
+        <div id="err"></div>
+        <button class="btn mt16" type="submit">${icon('check')}<span>Crear cuenta</span></button>
+      </form>
+      <p class="center small muted mt16">¿Ya tienes cuenta? <a href="#/login" style="color:var(--oil);font-weight:600">Inicia sesión</a></p>
+    </div>`;
+    bindAlta(app, 'r', (g) => go(`#/bienvenida/${g.id}`));
+  }
+
+  function Bienvenida(id) {
+    const g = D.gen(id);
+    if (!g) return go('#/login');
+    app.innerHTML = `<div class="login center">
+      <div class="okmark">${icon('check')}</div>
+      <h2 style="margin-top:22px">¡Tu cuenta<br><em>está lista!</em></h2>
+      <p class="lead">${esc(g.nombre)} · ${esc(g.colonia)}, ${g.zona}</p>
+      <div class="cred mt24">
+        <div class="label">Tu usuario</div>
+        <div class="cid">${g.id}</div>
+        <div class="label mt16">Tu contraseña</div>
+        <div class="cpass">${esc(g.nombre)}</div>
+      </div>
+      <div class="note mt16" style="text-align:left">${icon('info')}<span>Tu contraseña es el <b>nombre de tu negocio</b>, tal como lo escribiste. Guarda tu usuario <b>${g.id}</b>.</span></div>
+      <button class="btn mt24" id="entrar">${icon('chev')}<span>Entrar a mi cuenta</span></button>
+      <a class="btn ghost small mt8" href="#/login?u=${g.id}">Ir a iniciar sesión</a>
+    </div>`;
+    app.querySelector('#entrar').onclick = () => { setSession({ role: 'G', id: g.id }); go(`#/g/${g.id}/inicio`); };
   }
 
   // ======================================================
@@ -109,7 +229,7 @@
     const listos = zs.filter(z => z.estatus === 'LISTO PARA PLANTA');
     const next = pend[0];
     return `<div class="screen">
-      <div class="brand-head"><div><h1>${esc(cfg().recolector)}</h1><div class="sub"><span class="dot ${pend.length ? '' : 'ok'}"></span>${pend.length ? `En ruta · ${pend.length} ${pend.length === 1 ? 'parada pendiente' : 'paradas pendientes'}` : 'Ruta completada'}</div></div><button class="avatar dark" id="sw" aria-label="Cambiar de cuenta">${icon('swap')}</button></div>
+      <div class="brand-head"><div><h1>${esc(cfg().recolector)}</h1><div class="sub"><span class="dot ${pend.length ? '' : 'ok'}"></span>${pend.length ? `En ruta · ${pend.length} ${pend.length === 1 ? 'parada pendiente' : 'paradas pendientes'}` : 'Ruta completada'}</div></div><button class="avatar dark" id="sw" aria-label="Tu cuenta">${icon('swap')}</button></div>
       <div class="hero">${U.van(litrosHoy, 120)}
         <div class="big num">${fmt.n1(litrosHoy)}<small>L</small></div>
         <div class="cap">a bordo hoy · ${hechos.length} de ${ruta.length} paradas · ${fmt.mxn0(litrosHoy * cfg().precio_litro)} pagados</div>
@@ -245,40 +365,16 @@
 
   // P2b · Alta de puesto
   function RAlta(q) {
-    const id = q.id && /^GEN-\d{3,4}$/.test(q.id) && !D.gen(q.id) ? q.id : D.siguienteId();
     const html = `<div class="screen">
       ${top('Alta de puesto', '#/r/escanear')}
-      <div class="card oil flex mt16" style="display:flex"><span class="avatar">${icon('qr')}</span><div><b>QR sin registro · ${id}</b><div class="muted small">Captura los datos mínimos para asignar el QR a este puesto.</div></div></div>
-      <form id="f" novalidate>
-        <div class="field"><label>Nombre del negocio</label><input name="nombre" required placeholder="Ej. Tortas La Güera"></div>
-        <div class="field"><label>Tipo</label><select name="tipo">${['Puesto de tacos', 'Puesto de quesadillas', 'Fritanga', 'Puesto de churros', 'Tianguis (contenedor)', 'Fonda', 'Otro'].map(t => `<option>${t}</option>`).join('')}</select></div>
-        <div class="field"><label>Responsable</label><input name="responsable" required placeholder="Nombre y primera letra del apellido"></div>
-        <div class="grid2 mt0"><div class="field"><label>Teléfono (WhatsApp)</label><input name="telefono" inputmode="numeric" maxlength="10" required placeholder="10 dígitos"></div>
-        <div class="field"><label>Litros por semana</label><input name="litrosSemana" inputmode="decimal" required placeholder="Ej. 6"></div></div>
-        <div class="grid2 mt0"><div class="field"><label>Colonia</label><input name="colonia" required placeholder="Ej. Narvarte Oriente"></div>
-        <div class="field"><label>Zona</label><select name="zona">${D.ZONAS.map(z => `<option>${z.zona}</option>`).join('')}</select></div></div>
-        <div class="field"><label>CLABE para el pago (simulada)</label><input name="clabe" inputmode="numeric" maxlength="18" required placeholder="18 dígitos" class="mono"><div class="hint">Solo se guardan los datos mínimos para operar.</div></div>
-        <div id="err" class="field"></div>
-        <button class="btn mt16" type="submit">${icon('check')}Registrar y asignar QR</button>
+      <div class="card oil flex mt16" style="display:flex"><span class="avatar">${icon('qr')}</span><div><b>Puesto nuevo${q.id ? ' · QR ' + esc(q.id) + ' sin registro' : ''}</b><div class="muted small">El ID se asigna en orden en BD_OleoRuta; después imprime su etiqueta QR.</div></div></div>
+      <form id="af" novalidate>
+        ${formAlta('a')}
+        <div id="err"></div>
+        <button class="btn mt16" type="submit">${icon('check')}<span>Registrar y asignar QR</span></button>
       </form>
     </div>`;
-    setTimeout(() => {
-      app.querySelector('#f').onsubmit = (e) => {
-        e.preventDefault();
-        const d = Object.fromEntries(new FormData(e.target));
-        const errs = [];
-        if (!d.nombre.trim()) errs.push('el nombre');
-        if (!d.responsable.trim()) errs.push('el responsable');
-        if (!/^\d{10}$/.test(d.telefono)) errs.push('un teléfono de 10 dígitos');
-        if (!(+d.litrosSemana > 0)) errs.push('los litros por semana');
-        if (!d.colonia.trim()) errs.push('la colonia');
-        if (!/^\d{18}$/.test(d.clabe)) errs.push('una CLABE de 18 dígitos');
-        if (errs.length) { app.querySelector('#err').innerHTML = `<div class="err">Falta ${errs.join(', ')}.</div>`; return; }
-        const g = D.altaGenerador({ id, ...d, nombre: d.nombre.trim(), responsable: d.responsable.trim(), colonia: d.colonia.trim() });
-        U.toast(`${g.nombre} registrado con ${g.id}`);
-        go(`#/r/puesto/${g.id}`);
-      };
-    });
+    setTimeout(() => bindAlta(app, 'a', (g) => { U.toast(`${g.nombre} registrado con ${g.id}`); go(`#/r/puesto/${g.id}`); }));
     return html;
   }
 
@@ -390,6 +486,14 @@
     ['shield', 'HTTP 200 · LIQUIDADO', 'Clave de rastreo y folio emitidos'],
     ['layers', 'Fila LIQUIDADA · lote recalculado', 'Escenario A → BD_OleoRuta'],
   ];
+  const PASOS_NUBE = [
+    ['sheet', 'Entrega registrada en la app', 'Motor de reglas: pago y agua protegida'],
+    ['bolt', 'Bot «Nueva recolección»', 'Evento Adds only detectado'],
+    ['webhook', 'Webhook → Escenario A (Apps Script)', 'POST a script.google.com · token validado'],
+    ['bank', 'API SPEI simulada · Escenario B', 'Llamada HTTP desde el orquestador'],
+    ['shield', 'HTTP 200 · LIQUIDADO', 'Clave de rastreo emitida por la API'],
+    ['layers', 'Fila nueva en Google Sheets', 'BD_OleoRuta · Recolecciones (en la nube)'],
+  ];
   function RConfirmacion(id) {
     const r = D.rec(id); if (!r) return notFound('#/r/inicio');
     const g = D.gen(r.idGenerador);
@@ -400,7 +504,7 @@
       <div class="ring" id="ring">${U.ring(done ? 1 : 0.02)}<div class="rc"><div class="v num">${fmt.mxn(r.pago)}</div><div class="s" id="rs">${done ? 'LIQUIDADO' : 'Procesando…'}</div></div></div>
       <p class="center muted small" style="margin:0">${esc(g.nombre)} · ${fmt.L(r.litros)} · CLABE ${fmt.clabe(g.clabe)}</p>
       <div class="card oil flex" style="display:flex"><span class="ri" style="width:44px;height:44px;border-radius:14px;background:var(--oil);color:#111;display:grid;place-items:center;flex:none">${icon('water')}</span><div><b style="display:block;font-size:18px" class="num">${fmt.n(r.agua)} L de agua protegidos</b><span class="muted small">Impacto ambiental de esta entrega</span></div></div>
-      <div class="card steps" id="steps">${PASOS.map((p, i) => `<div class="step ${done ? 'done' : 'wait'}" data-i="${i}"><span class="si">${icon(done ? 'check' : p[0])}</span><span class="st"><b>${p[1]}</b><span>${p[2]}</span></span><span class="ms" data-ms></span></div>`).join('')}</div>
+      <div class="card steps" id="steps">${(window.OleoCloud && OleoCloud.enabled() && !done ? PASOS_NUBE : PASOS).map((p, i) => `<div class="step ${done ? 'done' : 'wait'}" data-i="${i}"><span class="si">${icon(done ? 'check' : p[0])}</span><span class="st"><b>${p[1]}</b><span>${p[2]}</span></span><span class="ms" data-ms></span></div>`).join('')}</div>
       <details class="card"><summary class="label" style="cursor:pointer">Contrato de integración (JSON)</summary><pre class="json">POST /webhook/escenario-A  <span class="h">(simulado)</span>\n${U.json(payload)}</pre><pre class="json" id="resp">${done ? respuesta(r) : '<span class="h">Esperando respuesta de la API…</span>'}</pre></details>
       <a class="btn mt16" id="ver" href="#/r/comprobante/${r.id}" ${done ? '' : 'style="opacity:.35;pointer-events:none"'}>${icon('receipt')}Ver comprobante</a>
     </div>`;
@@ -408,9 +512,56 @@
     return html;
   }
   function respuesta(r) {
-    return `HTTP 200  ← API SPEI simulada (Escenario B)\n` + U.json({ estatus: r.estatus, clave_rastreo: r.claveRastreo, monto: r.pago, concepto: `Pago aceite usado ${r.id}`, fecha_liquidacion: r.fechaLiquidacion, emisor: cfg().emisor });
+    const nube = r.pipeline && r.pipeline.modo === 'nube';
+    return `HTTP 200  ← API SPEI simulada (${nube ? 'Escenario B en Apps Script, vía Escenario A' : 'Escenario B, simulación local'})\n` + U.json({ estatus: r.estatus, clave_rastreo: r.claveRastreo, monto: r.pago, concepto: `Pago aceite usado ${r.id}`, fecha_liquidacion: r.fechaLiquidacion, emisor: cfg().emisor });
   }
   function runPipeline(r, g) {
+    if (window.OleoCloud && OleoCloud.enabled()) return runPipelineNube(r, g);
+    runPipelineLocal(r, g);
+  }
+  async function runPipelineNube(r, g) {
+    let alive = true; const timers = [];
+    cleanup = () => { alive = false; timers.forEach(clearTimeout); };
+    const zAntes = D.zona(g.zona);
+    const steps = () => app.querySelectorAll('#steps .step');
+    const setRing = (p) => { const c = app.querySelector('#ring .ring-fg'); if (c) c.style.strokeDashoffset = c.getAttribute('stroke-dasharray') * (1 - p); };
+    const run = (i) => { const s = steps()[i]; if (!s) return; s.classList.remove('wait'); s.classList.add('run'); s.querySelector('.si').innerHTML = icon('spinner'); };
+    const ok = (i, ms) => { const s = steps()[i]; if (!s) return; s.classList.remove('run', 'wait'); s.classList.add('done'); s.querySelector('.si').innerHTML = icon('check'); if (ms != null) s.querySelector('[data-ms]').textContent = ms + ' ms'; setRing((i + 1) / 6); };
+    const sleep = (ms) => new Promise(res => timers.push(setTimeout(res, ms)));
+    run(0); await sleep(150); if (!alive) return; ok(0, 150);
+    run(1); await sleep(120); if (!alive) return; ok(1, 120);
+    run(2); run(3);
+    let resp = null;
+    try {
+      resp = await OleoCloud.enviar({
+        id_recoleccion: r.id, fecha: r.fecha.replace('T', ' '), id_generador: g.id, negocio: g.nombre, clabe: g.clabe,
+        recolector: r.recolector, litros: r.litros, precio_litro: r.precio, monto: r.pago, agua_protegida_l: r.agua,
+        zona: g.zona, folio: r.folio, foto: r.foto ? 'capturada en la app' : 'demo',
+      });
+    } catch (e) { resp = { ok: false, error: e.name === 'AbortError' ? 'tiempo agotado' : e.message }; }
+    if (!alive) return;
+    if (!resp.ok) {
+      U.toast('Sin respuesta del backend · se usó la simulación de respaldo', 'alert');
+      app.querySelector('#steps').innerHTML = PASOS.map((p, i) => `<div class="step wait" data-i="${i}"><span class="si">${icon(p[0])}</span><span class="st"><b>${p[1]}</b><span>${p[2]}</span></span><span class="ms" data-ms></span></div>`).join('');
+      return runPipelineLocal(r, g);
+    }
+    const t = resp.ms;
+    ok(2, Math.round(t * 0.35)); ok(3, Math.round(t * 0.45));
+    run(4); await sleep(120); if (!alive) return;
+    const rr = D.liquidar(r.id, { bot: 120, makeA: Math.round(t * 0.35), makeB: Math.round(t * 0.45), total: 270 + t + 240, modo: 'nube', http: resp.status }, resp.data);
+    ok(4, 120);
+    app.querySelector('#resp').innerHTML = respuesta(rr);
+    app.querySelector('#rs').textContent = 'LIQUIDADO';
+    haptic('success');
+    run(5); await sleep(120); if (!alive) return; ok(5, Math.round(t * 0.2));
+    const v = app.querySelector('#ver'); v.removeAttribute('style');
+    const tt = app.querySelector('.topbar .title'); if (tt) tt.textContent = 'Pago liquidado';
+    const zDesp = D.zona(g.zona);
+    if (zAntes.estatus !== 'LISTO PARA PLANTA' && zDesp.estatus === 'LISTO PARA PLANTA') U.toast(`Lote ${g.zona} listo para planta · aviso enviado a ${cfg().recicladora}`, 'factory');
+    else U.toast('Pago liquidado y guardado en Google Sheets', 'check');
+    timers.push(setTimeout(() => { if (alive) go(`#/r/comprobante/${r.id}`); }, 1800));
+  }
+  function runPipelineLocal(r, g) {
     const ms = [180, 300 + Math.random() * 300 | 0, 600 + Math.random() * 400 | 0, 900 + Math.random() * 700 | 0, 260, 380];
     const timers = []; let t = 0, alive = true;
     const zAntes = D.zona(g.zona);
@@ -426,7 +577,7 @@
         setRing((i + 1) / ms.length);
         if (i === 4) {
           const total = ms.reduce((a, b) => a + b, 0);
-          const rr = D.liquidar(r.id, { bot: ms[1], makeA: ms[2], makeB: ms[3], total });
+          const rr = D.liquidar(r.id, { bot: ms[1], makeA: ms[2], makeB: ms[3], total, modo: 'simulado' });
           app.querySelector('#resp').innerHTML = respuesta(rr);
           app.querySelector('#rs').textContent = 'LIQUIDADO';
           haptic('success');
@@ -470,6 +621,7 @@
           <div class="kv"><span>Lote</span><b>${lote ? `${lote.id} · ${esc(lote.destino)}` : `${g.zona} · ${fmt.pct(z.avance)} ${z.estatus === 'LISTO PARA PLANTA' ? '· listo para planta' : 'acumulado'}`}</b></div>
           <div class="kv"><span>Recolector</span><b>${esc(r.recolector)}</b></div>
           ${r.pipeline ? `<div class="kv"><span>Tiempo de liquidación</span><b>${fmt.n1(r.pipeline.total / 1000)} s · automático</b></div>` : ''}
+          ${r.pipeline && r.pipeline.modo === 'nube' ? `<div class="kv"><span>Registro en la nube</span><b>Apps Script + Google Sheets ✓</b></div>` : ''}
         </div>
       </div>
       <div class="photo done" style="border-style:solid"><span class="ph">${r.foto ? `<img src="${r.foto}" alt="Foto del contenedor">` : U.fotoDemo(r.litros, r.id.charCodeAt(0))}</span><span class="rt"><b>Evidencia de pesaje</b><span>${fmt.fh(r.fecha)} · ${esc(g.colonia)}</span></span></div>`;
@@ -506,6 +658,7 @@
     return out;
   }
   function RTablero(q) {
+    setTimeout(() => { cargarNube(); const b = app.querySelector('#nubeR'); if (b) b.onclick = cargarNube; });
     const per = q.p || 'todo';
     const desde = per === '7' ? new Date(Date.now() - 7 * 86400000) : per === '30' ? new Date(Date.now() - 30 * 86400000) : null;
     const R = D.resumen(desde);
@@ -546,9 +699,26 @@
       </div>
       <div class="section-title"><span class="label">Lotes por zona</span></div>
       <div class="rows">${zs.map(z => zonaRow(z)).join('')}</div>
+      <div class="section-title"><span class="label">En la nube · Google Sheets</span><button id="nubeR">Actualizar</button></div>
+      <div class="card" id="nube"><div class="muted small">Leyendo BD_OleoRuta…</div></div>
       <div class="section-title"><span class="label">Generadores por litros</span></div>
       <div class="rows">${rank.map(x => `<a class="row" href="#/r/puesto/${x.g.id}" style="display:block"><div class="between"><span class="small" style="font-weight:500">${esc(x.g.nombre)}</span><span class="small num">${fmt.L(x.l)}</span></div><div class="mt8">${gauge(x.l / maxL, 'thin')}</div></a>`).join('')}</div>
     </div>${tabbarR('tablero')}`;
+  }
+  async function cargarNube() {
+    const box = app.querySelector('#nube'); if (!box || !window.OleoCloud) return;
+    box.innerHTML = '<div class="muted small">Leyendo BD_OleoRuta…</div>';
+    try {
+      const [res, recs] = await Promise.all([OleoCloud.hoja('Resumen'), OleoCloud.hoja('Recolecciones')]);
+      if (!app.contains(box)) return;
+      const ult = recs.slice(-4).reverse();
+      box.innerHTML = `<div class="between"><span class="pill ok">${icon('check')}En vivo</span><a class="small" style="color:var(--oil)" href="${OleoCloud.sheetUrl()}" target="_blank" rel="noopener noreferrer">Abrir hoja</a></div>
+        <div class="rows" style="margin-top:12px">${res.map(x => kvRow(esc(x.Indicador), esc(x.Valor))).join('')}</div>
+        <div class="label mt16">Últimas recolecciones en la nube</div>
+        ${ult.length ? `<div class="rows" style="margin-top:8px">${ult.map(x => `<div class="row"><span class="ri">${icon('receipt')}</span><span class="rt"><b>${esc(x.ID_Generador)} · ${esc(x.Litros)} L · $${esc(x.Monto_Pago)}</b><span>${esc(x.Fecha)} · ${esc(x.Clave_Rastreo)}</span></span><span class="pill ok">${esc(x.Estatus_Pago || '—')}</span></div>`).join('')}</div>` : '<div class="muted small mt8">Todavía no hay recolecciones registradas en la hoja.</div>'}`;
+    } catch (e) {
+      box.innerHTML = `<div class="muted small">No se pudo leer la hoja (${esc(e.message)}). Revisa la conexión.</div>`;
+    }
   }
   const kvRow = (k, v) => `<div class="row"><span class="rt"><b style="font-weight:400;color:var(--text-2)">${k}</b></span><span class="rv num">${v}</span></div>`;
 
@@ -593,13 +763,14 @@
       const g = D.gen(r.idGenerador), p = r.pipeline || {};
       const liq = r.estatus === 'LIQUIDADO';
       return `<details class="exec"><summary style="list-style:none;cursor:pointer"><div class="rh"><span class="pill ${liq ? 'ok' : 'oil'}">${liq ? 'Éxito' : 'En curso'}</span><b>${esc(g.nombre)} · ${fmt.L(r.litros)}</b><time>${fmt.fecha(r.fecha)} ${fmt.hora(r.fecha)}</time></div>
-        <div class="mods"><span class="mod"><i></i>Sheets · add row</span><span class="mod ${p.bot ? '' : 'pend'}"><i></i>Bot ${p.bot ? p.bot + ' ms' : '…'}</span><span class="mod ${p.makeA ? '' : 'pend'}"><i></i>Escenario A ${p.makeA ? p.makeA + ' ms' : '…'}</span><span class="mod ${p.makeB ? '' : 'pend'}"><i></i>B · SPEI ${p.makeB ? p.makeB + ' ms' : '…'}</span><span class="mod ${liq ? '' : 'pend'}"><i></i>${liq ? '200 LIQUIDADO' : 'pendiente'}</span></div></summary>
+        <div class="mods"><span class="mod ${p.modo === 'nube' ? '' : 'pend'}"><i></i>${p.modo === 'nube' ? 'Apps Script + Google Sheets' : 'Simulación local'}</span><span class="mod ${p.bot ? '' : 'pend'}"><i></i>Bot ${p.bot ? p.bot + ' ms' : '…'}</span><span class="mod ${p.makeA ? '' : 'pend'}"><i></i>Escenario A ${p.makeA ? p.makeA + ' ms' : '…'}</span><span class="mod ${p.makeB ? '' : 'pend'}"><i></i>B · SPEI ${p.makeB ? p.makeB + ' ms' : '…'}</span><span class="mod ${liq ? '' : 'pend'}"><i></i>${liq ? '200 LIQUIDADO' : 'pendiente'}</span></div></summary>
         <pre class="json">${U.json({ id_recoleccion: r.id, id_generador: g.id, monto: r.pago, litros: r.litros, zona: g.zona })}\n<span class="h">→</span> ${U.json({ estatus: r.estatus, clave_rastreo: r.claveRastreo, folio: r.folio })}</pre></details>`;
     }).join('');
-    const svc = (ic, t, s) => `<div class="row"><span class="ri">${icon(ic)}</span><span class="rt"><b>${t}</b><span>${s}</span></span><span class="pill ok">${icon('check')}Activo</span></div>`;
+    const nube = !!(window.OleoCloud && OleoCloud.enabled());
+    const svc = (ic, t, s) => `<div class="row"><span class="ri">${icon(ic)}</span><span class="rt"><b>${t}</b><span>${s}</span></span><span class="pill ${nube ? 'ok' : ''}">${nube ? icon('check') + 'En línea' : 'Respaldo local'}</span></div>`;
     return `<div class="screen">
       ${top('Monitor de automatización', '#/r/mas', `<a class="icon-btn" href="#/r/monitor${wide ? '' : '?wide=1'}" aria-label="Vista consola">${icon('layers')}</a>`)}
-      <p class="muted small mt8" style="margin-bottom:0">Pipeline simulado en el dispositivo: reproduce el contrato de integración del reporte (bot → escenario A → API SPEI → BD) sin servidor.</p>
+      <p class="muted small mt8" style="margin-bottom:0">${nube ? 'Pipeline en la nube (Google Workspace): la app envía el webhook al Escenario A en Apps Script, que llama por HTTP a la API SPEI simulada (Escenario B) y registra la fila en Google Sheets.' : 'Sin conexión al backend: el pipeline se simula en el dispositivo con el mismo contrato de integración.'}</p>
       <div class="console-grid">
       <div>
         <div class="grid3">
@@ -608,9 +779,10 @@
           <div class="tile oil"><span class="label">Promedio</span><div class="v num">${fmt.n1(avg)}<small>s</small></div></div>
         </div>
         <div class="rows">
-          ${svc('bolt', 'Bot «Nueva recolección»', 'Evento: Adds only · tabla Recolecciones')}
-          ${svc('webhook', 'Escenario A · orquestador', 'Webhook → API → actualización de la BD')}
-          ${svc('bank', 'Escenario B · API SPEI simulada', 'Responde estatus y clave de rastreo · emisor ' + esc(cfg().emisor))}
+          ${svc('bolt', 'Bot «Nueva recolección»', 'Evento: Adds only · dispara el webhook')}
+          ${svc('webhook', 'Apps Script · Escenario A (orquestador)', 'Webhook → API SPEI → Google Sheets → respuesta')}
+          ${svc('bank', 'Apps Script · Escenario B (API SPEI simulada)', 'Responde estatus y clave de rastreo · emisor ' + esc(cfg().emisor))}
+          ${svc('sheet', 'Google Sheets · BD_OleoRuta', 'Generadores · Recolecciones · Zonas · Config · Resumen')}
           ${svc('bell', 'Aviso de lote ≥ ' + cfg().umbral_lote + ' L', 'Notificación a ' + esc(cfg().recicladora))}
         </div>
         ${wide && last ? `<div class="card"><span class="label">Última ejecución · contrato de integración</span><pre class="json">POST /webhook/escenario-A   <span class="h">Content-Type: application/json · X-OleoRuta-Token: •••••• · simulado</span>\n${U.json({ id_recoleccion: last.id, id_generador: lg.id, negocio: lg.nombre, clabe: lg.clabe, litros: last.litros, monto: last.pago, agua_protegida_l: last.agua, zona: lg.zona })}</pre><pre class="json">${last.estatus === 'LIQUIDADO' ? respuesta(last) : 'Esperando…'}</pre></div>` : ''}
@@ -618,6 +790,7 @@
       <div>
         <div class="section-title ${wide ? 'mt0' : ''}" style="${wide ? 'margin-top:14px' : ''}"><span class="label">Historial de ejecuciones</span><span class="small muted">toca para ver el JSON</span></div>
         <div class="card flush">${runs}</div>
+        <a class="btn ghost small mt16" href="${window.OleoCloud ? OleoCloud.sheetUrl() : '#'}" target="_blank" rel="noopener noreferrer">${icon('sheet')}Abrir BD_OleoRuta en Google Sheets</a>
       </div>
       </div>
     </div>${tabbarR('mas')}`;
@@ -700,7 +873,6 @@
         ${row('#/r/config', 'gear', 'Configuración', 'Precio, factor de agua y umbral')}
       </div>
       <div class="rows">
-        <button class="row" id="sw"><span class="ri">${icon('swap')}</span><span class="rt"><b>Cambiar de cuenta</b><span>Recolector o generadores</span></span>${icon('chev', 'chev')}</button>
         <a class="row" href="#/login" data-act="logout"><span class="ri">${icon('logout')}</span><span class="rt"><b>Cerrar sesión</b></span></a>
       </div>
       <p class="foot-note">OleoRuta · Prototipo funcional MVP · Sprint 2<br>Universidad La Salle México · 900 CIB</p>
@@ -720,7 +892,7 @@
     const sol = db().solicitudes.find(s => s.idGenerador === g.id && s.estado === 'ABIERTA');
     const last = rs[0];
     const html = `<div class="screen">
-      <div class="brand-head"><div style="min-width:0"><h1>${esc(g.nombre)}</h1><div class="sub"><span class="dot ${sol ? '' : 'ok'}"></span>${sol ? 'Aviso enviado · recolector en camino' : `${g.id} · ${esc(g.colonia)}`}</div></div><button class="avatar" id="sw" aria-label="Cambiar de cuenta">${fmt.iniciales(g.nombre)}</button></div>
+      <div class="brand-head"><div style="min-width:0"><h1>${esc(g.nombre)}</h1><div class="sub"><span class="dot ${sol ? '' : 'ok'}"></span>${sol ? 'Aviso enviado · recolector en camino' : `${g.id} · ${esc(g.colonia)}`}</div></div><button class="avatar" id="sw" aria-label="Tu cuenta">${fmt.iniciales(g.nombre)}</button></div>
       <div class="hero"><div class="hero-row">${U.bidon(n.pct, { tambo: g.contenedor > 50 })}
         <div class="hero-stat"><div class="label">Nivel estimado</div><div class="big num" style="font-size:54px;margin-top:6px">${fmt.n1(n.litros)}<small>L</small></div><div class="cap">de ${g.contenedor} L · ${fmt.pct(n.pct)}</div><div class="status-line mt16">${icon('truck').replace('<svg', '<svg style="width:15px;height:15px;color:var(--oil)"')}<span>Próxima <b>${fmt.fecha(n.proxima)}</b></span></div></div></div>
       </div>
@@ -847,7 +1019,6 @@
         ${kvRow('Fecha de alta', fmt.fechaL(g.fechaAlta + 'T12:00'))}
       </div>
       <div class="rows">
-        <button class="row" id="sw"><span class="ri">${icon('swap')}</span><span class="rt"><b>Cambiar de cuenta</b></span>${icon('chev', 'chev')}</button>
         <a class="row" href="#/login" data-act="logout"><span class="ri">${icon('logout')}</span><span class="rt"><b>Cerrar sesión</b></span></a>
       </div>
       <p class="foot-note">Tus datos se usan solo para pagarte y rastrear tu aceite.<br>OleoRuta · prototipo</p>
@@ -865,14 +1036,18 @@
     document.querySelectorAll('.sheet, .sheet-bg').forEach(e => e.remove());
     const { parts, q } = parse();
     let html = '';
+    const ses = getSession();
+    const dev = !!(NATIVE && NATIVE.dev);   // ruta abierta desde Xcode con -route (pruebas)
     if (!parts.length) {
-      const s = getSession();
-      if (s && s.role === 'R') return go('#/r/inicio');
-      if (s && s.role === 'G' && D.gen(s.id)) return go(`#/g/${s.id}/inicio`);
+      if (ses && ses.role === 'R') return go('#/r/inicio');
+      if (ses && ses.role === 'G' && D.gen(ses.id)) return go(`#/g/${ses.id}/inicio`);
       return go('#/login');
     }
-    if (parts[0] === 'login') { Login(); return after(); }
+    if (parts[0] === 'login') { if (ses && ses.role === 'G' && D.gen(ses.id)) return go(`#/g/${ses.id}/inicio`); Login(q); return after(); }
+    if (parts[0] === 'registro') { Registro(); return after(); }
+    if (parts[0] === 'bienvenida') { Bienvenida(parts[1]); return after(); }
     if (parts[0] === 'r') {
+      if (!(ses && ses.role === 'R') && !dev) return go('#/login');
       setSession({ role: 'R' });
       const [, v, a] = parts;
       html = ({
@@ -884,6 +1059,7 @@
     } else if (parts[0] === 'g') {
       const g = D.gen(parts[1]);
       if (!g) return go('#/login');
+      if (!(ses && ses.role === 'G' && ses.id === g.id) && !dev) return go('#/login');
       setSession({ role: 'G', id: g.id });
       const v = parts[2], a = parts[3];
       html = ({ inicio: () => GInicio(g), entregas: () => GEntregas(g), comprobante: () => GComprobante(g, a), qr: () => GQR(g), impacto: () => GImpacto(g), perfil: () => GPerfil(g) }[v] || (() => GInicio(g)))();
@@ -893,7 +1069,7 @@
   }
   function after() {
     U.bindCharts(app);
-    const sw = app.querySelector('#sw'); if (sw) sw.onclick = switchSheet;
+    const sw = app.querySelector('#sw'); if (sw) sw.onclick = cuentaSheet;
     window.scrollTo(0, 0);
   }
 
@@ -905,6 +1081,7 @@
   });
   window.addEventListener('hashchange', render);
   render();
+  sincronizarCuentas();
 
   if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => { });
