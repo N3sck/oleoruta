@@ -201,7 +201,7 @@
   function siguienteFolio() { return 'OR-' + pad(db.recolecciones.length + 1, 5); }
 
   // Paso 4–5 del pipeline: el recolector guarda la entrega (estatus EN PROCESO)
-  function registrarEntrega({ idGenerador, litros, foto }) {
+  function registrarEntrega({ idGenerador, litros, foto, recolector }) {
     const cfg = db.config;
     const r = rng(Date.now() & 0xffffffff);
     const ahora = new Date();
@@ -209,7 +209,7 @@
       id: hex8(r), idGenerador, fecha: iso(ahora), litros: +litros,
       pago: +(litros * cfg.precio_litro).toFixed(2), agua: Math.round(litros * cfg.factor_agua), precio: cfg.precio_litro,
       foto: foto || null, estatus: 'EN PROCESO', claveRastreo: null, folio: siguienteFolio(), fechaLiquidacion: null,
-      estadoLote: 'PENDIENTE', idLote: null, recolector: cfg.recolector, pipeline: null,
+      estadoLote: 'PENDIENTE', idLote: null, recolector: recolector || cfg.recolector, pipeline: null,
     };
     db.recolecciones.push(item);
     db.solicitudes.filter(s => s.idGenerador === idGenerador && s.estado === 'ABIERTA').forEach(s => s.estado = 'ATENDIDA');

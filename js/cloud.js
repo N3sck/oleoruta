@@ -30,20 +30,24 @@
     }
   }
 
-  // Alta de generador: el backend asigna el siguiente ID_Generador en orden y responde con la cuenta creada
-  async function alta(datos) {
-    const body = new URLSearchParams({ ...datos, accion: 'alta', token: CLOUD.token });
+  // Acciones de cuenta (alta de generador, alta y login de recolector): POST con «accion» y token
+  async function accion(nombre, datos) {
+    const body = new URLSearchParams({ ...datos, accion: nombre, token: CLOUD.token });
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), CLOUD.timeoutMs);
     try {
       const res = await fetch(CLOUD.webhook, { method: 'POST', body, signal: ctrl.signal, cache: 'no-store' });
       let data = null;
       try { data = JSON.parse(await res.text()); } catch (e) { }
-      return { ok: !!(data && data.estatus === 'OK' && data.generador), data };
+      return { ok: !!(data && data.estatus === 'OK'), data };
     } finally {
       clearTimeout(t);
     }
   }
+  // Alta de generador: el backend asigna el siguiente ID_Generador en orden
+  const alta = async (datos) => { const r = await accion('alta', datos); r.ok = r.ok && !!(r.data && r.data.generador); return r; };
+  const altaRecolector = (datos) => accion('alta_recolector', datos);
+  const loginRecolector = (id, contrasena) => accion('login_recolector', { id, contrasena });
 
   // CSV → arreglo de objetos (respeta comillas y comas dentro de los campos)
   function parseCSV(text) {
@@ -89,7 +93,7 @@
   }
 
   window.OleoCloud = {
-    CLOUD, enabled, enviar, alta, hoja, parseCSV, fetchResultado,
+    CLOUD, enabled, enviar, alta, altaRecolector, loginRecolector, hoja, parseCSV, fetchResultado,
     sheetUrl: () => `https://docs.google.com/spreadsheets/d/${CLOUD.sheetId}/edit`,
   };
 })();

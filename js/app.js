@@ -77,12 +77,17 @@
     catch (e) { return false; }
   }
 
+  // Recolector con sesión iniciada (o la unidad de Config si se abrió en modo de pruebas)
+  const yoRec = () => { const s = getSession(); return s && s.role === 'R' && s.id ? s : null; };
+  const recNombre = () => { const r = yoRec(); return r ? r.nombre : cfg().recolector; };
+  const recEtiqueta = () => { const r = yoRec(); return r ? `${r.id} · ${r.nombre}` : cfg().recolector; };
+
   function cuentaSheet() {
     const s = getSession() || {};
     const g = s.role === 'G' ? D.gen(s.id) : null;
     U.sheet(`<div class="between"><h3 style="margin:0;font-size:20px">Tu cuenta</h3><button class="icon-btn" data-close>${icon('close')}</button></div>
-      <div class="rows"><div class="acct">${g ? `<span class="avatar">${fmt.iniciales(g.nombre)}</span><span class="rt"><b>${esc(g.nombre)}</b><span>Usuario ${g.id} · ${g.zona}</span></span>` : `<span class="avatar dark">${icon('truck')}</span><span class="rt"><b>Recolector · ${esc(cfg().recolector)}</b><span>Operación en calle</span></span>`}</div></div>
-      <a class="btn ghost mt16" href="#/login" data-act="logout">${icon('logout')}Cerrar sesión</a>`);
+      <div class="rows"><div class="acct">${g ? `<span class="avatar">${fmt.iniciales(g.nombre)}</span><span class="rt"><b>${esc(g.nombre)}</b><span>Usuario ${g.id} · ${g.zona}</span></span>` : `<span class="avatar dark">${icon('truck')}</span><span class="rt"><b>${esc(recNombre())}</b><span>Recolector · usuario ${esc((yoRec() || {}).id || '—')}</span></span>`}</div></div>
+      <a class="btn ghost mt16" href="${s.role === 'R' ? '#/rlogin' : '#/login'}" data-act="logout">${icon('logout')}Cerrar sesión</a>`);
   }
 
   function authHead(sub) {
@@ -106,12 +111,12 @@
         <button class="btn mt16" type="submit" id="go">${icon('check')}<span>Iniciar sesión</span></button>
       </form>
       <p class="center small muted mt16">¿Aún no tienes cuenta? <a href="#/registro" style="color:var(--oil);font-weight:600">Crea una aquí</a></p>
-      <div class="rows mt24"><button class="acct feature" id="rec"><span class="avatar dark">${icon('truck')}</span><span class="rt"><b>Acceso del recolector</b><span>Operación en calle · ${esc(cfg().recolector)}</span></span>${icon('chev', 'chev')}</button></div>
+      <div class="rows mt24"><button class="acct feature" id="rec"><span class="avatar dark">${icon('truck')}</span><span class="rt"><b>Acceso del recolector</b><span>Iniciar sesión o crear cuenta de recolector</span></span>${icon('chev', 'chev')}</button></div>
       <p class="foot-note">Prototipo funcional MVP · Sprint 2<br>Cuentas guardadas en Google Sheets · BD_OleoRuta</p>
     </div>`;
     const f = app.querySelector('#lf'), err = app.querySelector('#err'), btn = app.querySelector('#go');
     app.querySelector('#eye').onclick = () => { const p = app.querySelector('#lp'); p.type = p.type === 'password' ? 'text' : 'password'; };
-    app.querySelector('#rec').onclick = () => { setSession({ role: 'R' }); go('#/r/inicio'); };
+    app.querySelector('#rec').onclick = () => go('#/rlogin');
     f.onsubmit = async (e) => {
       e.preventDefault();
       const id = normId(f.u.value), pass = f.p.value;
@@ -128,6 +133,111 @@
       setSession({ role: 'G', id: g.id });
       go(`#/g/${g.id}/inicio`);
     };
+  }
+
+  // ---------- Recolector: iniciar sesión y crear cuenta ----------
+  function authTabsRec(on) {
+    return `<div class="seg auth-tabs"><a class="${on === 'login' ? 'on' : ''}" href="#/rlogin">Iniciar sesión</a><a class="${on === 'registro' ? 'on' : ''}" href="#/rregistro">Crear cuenta</a></div>`;
+  }
+  const recHead = (sub) => `<div class="between"><div class="logo">${U.logo(44)}<b>Oleo<span>Ruta</span></b></div><span class="pill oil">${icon('truck')}Recolector</span></div>
+      <h2>Tu ruta,<br><em>sin papeleo.</em></h2>
+      <p class="lead">${sub}</p>`;
+  const normRec = (t) => { const m = String(t || '').toUpperCase().replace(/\s+/g, '').match(/^OR-?(\d{1,3})$/); return m ? 'OR-' + String(+m[1]).padStart(2, '0') : null; };
+  const iniciarRec = (r) => { setSession({ role: 'R', id: r.id_recolector, nombre: r.nombre, telefono: r.telefono }); haptic('success'); go('#/r/inicio'); };
+  const errCuenta = (data) => {
+    const e = (data && data.error) || '';
+    if (/litros fuera de rango|ID de generador inválido/.test(e)) return 'El servidor aún no tiene activadas las cuentas de recolector (falta publicar la nueva versión del Apps Script).';
+    return e || 'No se pudo conectar con el servidor. Revisa tu conexión.';
+  };
+
+  function RLogin(q) {
+    app.innerHTML = `<div class="login">
+      ${recHead('Entra con tu usuario de recolector para registrar entregas y liquidar pagos.')}
+      ${authTabsRec('login')}
+      <form id="lf" novalidate autocomplete="on">
+        <div class="field"><label>Usuario (ID de recolector)</label><div class="inp">${icon('truck')}<input name="u" id="lu" placeholder="OR-01" autocapitalize="characters" autocomplete="username" spellcheck="false" value="${esc(q.u || '')}"></div></div>
+        <div class="field"><label>Contraseña</label><div class="inp">${icon('shield')}<input name="p" id="lp" type="password" placeholder="Tu contraseña" autocomplete="current-password"><button type="button" class="eye" id="eye" aria-label="Mostrar contraseña">${icon('eye')}</button></div></div>
+        <div id="err"></div>
+        <button class="btn mt16" type="submit" id="go">${icon('check')}<span>Iniciar sesión</span></button>
+      </form>
+      <p class="center small muted mt16">¿Eres nuevo? <a href="#/rregistro" style="color:var(--oil);font-weight:600">Crea tu cuenta de recolector</a></p>
+      <a class="btn ghost small mt24" href="#/login">${icon('store')}Soy un negocio</a>
+      <p class="foot-note">La contraseña se verifica en el servidor y se guarda cifrada (hash) en BD_OleoRuta.</p>
+    </div>`;
+    const f = app.querySelector('#lf'), err = app.querySelector('#err'), btn = app.querySelector('#go');
+    app.querySelector('#eye').onclick = () => { const p = app.querySelector('#lp'); p.type = p.type === 'password' ? 'text' : 'password'; };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const fail = (m) => { err.innerHTML = `<div class="field"><div class="err">${esc(m)}</div></div>`; haptic('light'); };
+      const id = normRec(f.u.value);
+      if (!id) return fail('Escribe tu usuario, por ejemplo OR-01.');
+      if (!f.p.value) return fail('Escribe tu contraseña.');
+      if (!window.OleoCloud || !OleoCloud.enabled()) return fail('Se necesita conexión a internet para iniciar sesión.');
+      btn.disabled = true; btn.querySelector('span').textContent = 'Verificando…'; err.innerHTML = '';
+      let r;
+      try { r = await OleoCloud.loginRecolector(id, f.p.value); } catch (e2) { r = { ok: false, data: null }; }
+      btn.disabled = false; btn.querySelector('span').textContent = 'Iniciar sesión';
+      if (!r.ok || !r.data.recolector) return fail(errCuenta(r.data));
+      iniciarRec(r.data.recolector);
+    };
+  }
+
+  let recNuevo = null;   // datos del recolector recién creado (solo para la pantalla de bienvenida)
+  function RRegistro() {
+    app.innerHTML = `<div class="login">
+      ${recHead('Crea tu cuenta de recolector. Solo necesitamos tu nombre, una contraseña y tu teléfono.')}
+      ${authTabsRec('registro')}
+      <form id="rf" novalidate>
+        <div class="field"><label>Nombre completo</label><div class="inp">${icon('user')}<input name="nombre" maxlength="60" placeholder="Nombre y apellidos" autocapitalize="words" autocomplete="name"></div></div>
+        <div class="field"><label>Contraseña</label><div class="inp">${icon('shield')}<input name="contrasena" id="rp" type="password" maxlength="64" placeholder="Mínimo 6 caracteres" autocomplete="new-password"><button type="button" class="eye" id="eye" aria-label="Mostrar contraseña">${icon('eye')}</button></div><div class="hint" id="fuerza">Usa al menos 6 caracteres.</div></div>
+        <div class="field"><label>Teléfono (WhatsApp)</label><div class="inp">${icon('phone')}<input name="telefono" inputmode="numeric" maxlength="14" placeholder="10 dígitos" autocomplete="tel-national"></div></div>
+        <div class="note mt16">${icon('info')}<span>Tu <b>usuario</b> se asigna en orden (OR-01, OR-02…) y te lo mostramos al terminar. Tu <b>contraseña</b> es la que elijas aquí.</span></div>
+        <div id="err"></div>
+        <button class="btn mt16" type="submit">${icon('check')}<span>Crear cuenta</span></button>
+      </form>
+      <p class="center small muted mt16">¿Ya tienes cuenta? <a href="#/rlogin" style="color:var(--oil);font-weight:600">Inicia sesión</a></p>
+    </div>`;
+    const f = app.querySelector('#rf'), err = app.querySelector('#err'), btn = f.querySelector('button[type=submit]');
+    app.querySelector('#eye').onclick = () => { const p = app.querySelector('#rp'); p.type = p.type === 'password' ? 'text' : 'password'; };
+    f.contrasena.oninput = () => { const n = f.contrasena.value.length; app.querySelector('#fuerza').textContent = n === 0 ? 'Usa al menos 6 caracteres.' : n < 6 ? `Faltan ${6 - n} caracteres.` : n < 10 ? 'Contraseña aceptable.' : 'Contraseña segura.'; };
+    f.telefono.oninput = () => { f.telefono.value = f.telefono.value.replace(/\D/g, '').slice(0, 10); };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const d = { nombre: f.nombre.value.trim().replace(/\s+/g, ' '), contrasena: f.contrasena.value, telefono: f.telefono.value };
+      const faltan = [];
+      if (d.nombre.length < 3) faltan.push('tu nombre (mínimo 3 letras)');
+      if (d.contrasena.length < 6) faltan.push('una contraseña de al menos 6 caracteres');
+      if (!/^\d{10}$/.test(d.telefono)) faltan.push('un teléfono de 10 dígitos');
+      const fail = (m) => { err.innerHTML = `<div class="field"><div class="err">${esc(m)}</div></div>`; haptic('light'); };
+      if (faltan.length) return fail('Falta ' + faltan.join(', ') + '.');
+      if (!window.OleoCloud || !OleoCloud.enabled()) return fail('Se necesita conexión a internet para crear la cuenta.');
+      btn.disabled = true; btn.querySelector('span').textContent = 'Creando cuenta…'; err.innerHTML = '';
+      let r;
+      try { r = await OleoCloud.altaRecolector(d); } catch (e2) { r = { ok: false, data: null }; }
+      btn.disabled = false; btn.querySelector('span').textContent = 'Crear cuenta';
+      if (!r.ok || !r.data.recolector) return fail(errCuenta(r.data));
+      recNuevo = r.data.recolector; haptic('success');
+      go('#/rbienvenida');
+    };
+  }
+
+  function RBienvenida() {
+    const r = recNuevo;
+    if (!r) return go('#/rlogin');
+    app.innerHTML = `<div class="login center">
+      <div class="okmark">${icon('truck')}</div>
+      <h2 style="margin-top:22px">¡Bienvenido<br><em>a la ruta!</em></h2>
+      <p class="lead">${esc(r.nombre)} · ${esc(r.tipo)}</p>
+      <div class="cred mt24">
+        <div class="label">Tu usuario</div>
+        <div class="cid">${esc(r.id_recolector)}</div>
+        <div class="label mt16">Tu contraseña</div>
+        <div class="cpass">La que elegiste</div>
+      </div>
+      <div class="note mt16" style="text-align:left">${icon('info')}<span>Inicia sesión con tu usuario <b>${esc(r.id_recolector)}</b> y tu contraseña. Guárdalos: la contraseña no se puede consultar después.</span></div>
+      <button class="btn mt24" id="entrar">${icon('chev')}<span>Empezar mi ruta</span></button>
+    </div>`;
+    app.querySelector('#entrar').onclick = () => { recNuevo = null; iniciarRec(r); };
   }
 
   // Formulario de alta (lo usan «Crear cuenta» y el alta de puesto del recolector)
@@ -229,7 +339,7 @@
     const listos = zs.filter(z => z.estatus === 'LISTO PARA PLANTA');
     const next = pend[0];
     return `<div class="screen">
-      <div class="brand-head"><div><h1>${esc(cfg().recolector)}</h1><div class="sub"><span class="dot ${pend.length ? '' : 'ok'}"></span>${pend.length ? `En ruta · ${pend.length} ${pend.length === 1 ? 'parada pendiente' : 'paradas pendientes'}` : 'Ruta completada'}</div></div><button class="avatar dark" id="sw" aria-label="Tu cuenta">${icon('swap')}</button></div>
+      <div class="brand-head"><div><h1>${esc(recNombre())}</h1><div class="sub">${yoRec() ? `<span class="pill">${esc(yoRec().id)}</span>` : ''}<span class="dot ${pend.length ? '' : 'ok'}"></span>${pend.length ? `En ruta · ${pend.length} ${pend.length === 1 ? 'parada pendiente' : 'paradas pendientes'}` : 'Ruta completada'}</div></div><button class="avatar dark" id="sw" aria-label="Tu cuenta">${icon('swap')}</button></div>
       <div class="hero">${U.van(litrosHoy, 120)}
         <div class="big num">${fmt.n1(litrosHoy)}<small>L</small></div>
         <div class="cap">a bordo hoy · ${hechos.length} de ${ruta.length} paradas · ${fmt.mxn0(litrosHoy * cfg().precio_litro)} pagados</div>
@@ -469,7 +579,7 @@
       };
       $('#ok').onclick = () => {
         if (!(litros > 0)) { U.toast('Con 0 L la entrega no se guarda', 'alert'); return; }
-        const r = D.registrarEntrega({ idGenerador: id, litros, foto: foto === 'demo' ? null : foto });
+        const r = D.registrarEntrega({ idGenerador: id, litros, foto: foto === 'demo' ? null : foto, recolector: recEtiqueta() });
         go(`#/r/confirmacion/${r.id}`);
       };
       upd();
@@ -873,7 +983,7 @@
         ${row('#/r/config', 'gear', 'Configuración', 'Precio, factor de agua y umbral')}
       </div>
       <div class="rows">
-        <a class="row" href="#/login" data-act="logout"><span class="ri">${icon('logout')}</span><span class="rt"><b>Cerrar sesión</b></span></a>
+        <a class="row" href="#/rlogin" data-act="logout"><span class="ri">${icon('logout')}</span><span class="rt"><b>Cerrar sesión</b></span></a>
       </div>
       <p class="foot-note">OleoRuta · Prototipo funcional MVP · Sprint 2<br>Universidad La Salle México · 900 CIB</p>
     </div>${tabbarR('mas')}`;
@@ -1039,16 +1149,19 @@
     const ses = getSession();
     const dev = !!(NATIVE && NATIVE.dev);   // ruta abierta desde Xcode con -route (pruebas)
     if (!parts.length) {
-      if (ses && ses.role === 'R') return go('#/r/inicio');
+      if (ses && ses.role === 'R' && ses.id) return go('#/r/inicio');
       if (ses && ses.role === 'G' && D.gen(ses.id)) return go(`#/g/${ses.id}/inicio`);
       return go('#/login');
     }
     if (parts[0] === 'login') { if (ses && ses.role === 'G' && D.gen(ses.id)) return go(`#/g/${ses.id}/inicio`); Login(q); return after(); }
     if (parts[0] === 'registro') { Registro(); return after(); }
     if (parts[0] === 'bienvenida') { Bienvenida(parts[1]); return after(); }
+    if (parts[0] === 'rlogin') { if (ses && ses.role === 'R' && ses.id) return go('#/r/inicio'); RLogin(q); return after(); }
+    if (parts[0] === 'rregistro') { RRegistro(); return after(); }
+    if (parts[0] === 'rbienvenida') { RBienvenida(); return after(); }
     if (parts[0] === 'r') {
-      if (!(ses && ses.role === 'R') && !dev) return go('#/login');
-      setSession({ role: 'R' });
+      if (!(ses && ses.role === 'R' && ses.id) && !dev) return go('#/rlogin');
+      if (!ses || ses.role !== 'R') setSession({ role: 'R' });
       const [, v, a] = parts;
       html = ({
         inicio: () => RInicio(), ruta: () => RRuta(), escanear: () => REscanear(q), alta: () => RAlta(q),
