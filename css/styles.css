@@ -538,3 +538,14 @@ table.t td.r, table.t th.r { text-align: right; }
 .or-pin.fuera span { color: #fff; }
 .or-tip { background: #18181b; color: var(--oil); border: 1px solid rgba(255, 194, 26, .4); font-weight: 600; font-size: 11px; box-shadow: none; }
 .or-tip::before { display: none; }
+
+/* ---------- botón «Usar mi ubicación actual» ---------- */
+.gps-btn { height: 50px; font-size: 15px; background: var(--card-2); color: var(--oil); border: 1px solid rgba(255, 194, 26, .45); box-shadow: none; }
+.gps-btn svg { color: var(--oil); }
+.gps-btn[disabled] { opacity: .7; }
+.gps-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--text-3); line-height: 1.4; }
+.gps-note svg { width: 15px; height: 15px; flex: none; }
+.gps-note.ok { color: var(--ok); }
+.gps-note.mal { color: var(--bad); }
+.gps-note .link { color: var(--oil); font-weight: 700; font-size: 12px; text-decoration: underline; }
+.gps-note > span { flex: 1 1 220px; min-width: 0; }

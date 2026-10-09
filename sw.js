@@ -1,7 +1,7 @@
 /* Service worker de OleoRuta
    Estrategia «primero la red»: con conexión siempre se sirve la versión publicada más reciente
    (revalidando contra el servidor, sin usar la caché HTTP del navegador); sin conexión se usa la copia guardada. */
-const CACHE = 'oleoruta-v11';
+const CACHE = 'oleoruta-v12';
 const FILES = ['./', './index.html', './manifest.webmanifest', './css/vendor/leaflet.css', './css/styles.css', './js/zonas_geo.js', './js/data.js', './js/cloud.js', './js/ui.js', './js/mapa.js', './js/app.js', './js/vendor/jsQR.js', './js/vendor/qrcode.js', './js/vendor/leaflet.js', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-180.png'];
 
 self.addEventListener('install', (e) => {

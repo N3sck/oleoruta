@@ -47,7 +47,16 @@
     if (op.pos && op.pos.lat != null) poner(op.pos.lat, op.pos.lng, true, false);
     // Pin amarillo dentro de la zona piloto, rojo fuera
     const estado = (dentro) => { if (mk) mk.setIcon(pin('', dentro ? 'yo' : 'fuera')); };
-    return { mapa: m, poner, estado, centrar: (lat, lng, z) => m.setView([lat, lng], z || m.getZoom()), pos: () => mk && mk.getLatLng() };
+    // Círculo con la precisión del GPS (se quita en cuanto el usuario mueve el pin a mano)
+    let circ = null;
+    const precision = (lat, lng, metros) => {
+      if (circ) { m.removeLayer(circ); circ = null; }
+      if (metros) circ = L.circle([lat, lng], { radius: Math.max(metros, 8), color: '#5ab0ff', weight: 1, fillColor: '#5ab0ff', fillOpacity: .12, interactive: false }).addTo(m);
+    };
+    m.on('click', () => precision());
+    if (mk) mk.on('dragstart', () => precision());
+    const ponerOrig = poner;
+    return { mapa: m, poner: (...a) => { ponerOrig(...a); mk && mk.off('dragstart').on('dragstart', () => precision()); }, estado, precision, centrar: (lat, lng, z) => m.setView([lat, lng], z || m.getZoom()), pos: () => mk && mk.getLatLng() };
   }
 
   // Mapa con varios pines numerados (ruta del día): puntos [{lat,lng,txt,titulo,sub,href,cls}]
@@ -66,31 +75,39 @@
 
   // ---------- ubicación del dispositivo ----------
   let pendiente = null;
+  const err = (msg, codigo) => Object.assign(new Error(msg), { codigo });
+  // Estado del permiso en el navegador (si el navegador lo permite consultar)
+  async function permisoWeb() {
+    try { return (await navigator.permissions.query({ name: 'geolocation' })).state; } catch (e) { return 'desconocido'; }
+  }
   function ubicar() {
     return new Promise((resolve, reject) => {
       const nativo = window.OleoNativeInfo;
       if (nativo) {
         pendiente = { resolve, reject };
-        try { window.webkit.messageHandlers.oleo.postMessage({ type: 'location' }); } catch (e) { pendiente = null; reject(new Error('No disponible')); }
-        setTimeout(() => { if (pendiente) { pendiente = null; reject(new Error('El GPS tardó demasiado. Toca el mapa para colocar el pin.')); } }, 20000);
+        try { window.webkit.messageHandlers.oleo.postMessage({ type: 'location' }); } catch (e) { pendiente = null; reject(err('No disponible', 'nodisponible')); }
+        setTimeout(() => { if (pendiente) { pendiente = null; reject(err('El GPS tardó demasiado. Toca el mapa para colocar el pin.', 'error')); } }, 30000);
         return;
       }
-      if (!navigator.geolocation) return reject(new Error('Este navegador no permite obtener la ubicación. Toca el mapa para colocar el pin.'));
+      if (!navigator.geolocation || !window.isSecureContext) return reject(err('Este navegador no permite obtener la ubicación. Toca el mapa para colocar el pin.', 'nodisponible'));
       navigator.geolocation.getCurrentPosition(
         p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, precision: p.coords.accuracy }),
-        e => reject(new Error(e.code === 1 ? 'Permiso de ubicación denegado. Puedes tocar el mapa para colocar el pin.' : 'No se pudo obtener la ubicación. Toca el mapa para colocar el pin.')),
+        e => reject(e.code === 1
+          ? err('Permiso de ubicación denegado. Actívalo en tu navegador: toca el ícono junto a la dirección de la página → Ubicación → Permitir. O toca el mapa para colocar el pin.', 'denegado')
+          : err('No se pudo obtener la ubicación. Revisa que el GPS esté encendido o toca el mapa para colocar el pin.', 'error')),
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
     });
   }
   // Respuesta del puente nativo (iOS)
   function resultadoNativo(json) {
     const r = JSON.parse(json), p = pendiente; pendiente = null; if (!p) return;
-    r.ok ? p.resolve({ lat: r.lat, lng: r.lng, precision: r.precision }) : p.reject(new Error(r.error || 'No se pudo obtener la ubicación. Toca el mapa para colocar el pin.'));
+    r.ok ? p.resolve({ lat: r.lat, lng: r.lng, precision: r.precision }) : p.reject(err(r.error || 'No se pudo obtener la ubicación. Toca el mapa para colocar el pin.', r.codigo || 'error'));
   }
 
   const enlaceComoLlegar = (lat, lng) => window.OleoNativeInfo
     ? `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`
     : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-  window.OleoMapa = { crear, selector, puntos, ubicar, resultadoNativo, enlaceComoLlegar, CDMX };
+  const abrirAjustes = () => { try { window.webkit.messageHandlers.oleo.postMessage({ type: 'openSettings' }); } catch (e) { } };
+  window.OleoMapa = { crear, selector, puntos, ubicar, resultadoNativo, enlaceComoLlegar, permisoWeb, abrirAjustes, CDMX };
 })();

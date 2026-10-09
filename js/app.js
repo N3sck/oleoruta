@@ -250,8 +250,10 @@
   const coordTxt = (p) => p ? `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}` : 'Sin ubicación';
   const campoUbicacion = (pref, titulo = 'Ubicación del negocio') => `
       <div class="field"><label>${titulo}</label>
-        <div class="mapa" id="${pref}map"></div>
-        <div class="map-bar"><button type="button" class="btn small ghost" id="${pref}gps">${icon('pin')}<span>Usar mi ubicación</span></button><span class="map-coord mono" id="${pref}coord">Sin ubicación</span></div>
+        <button type="button" class="btn gps-btn" id="${pref}gps">${icon('pin')}<span>Usar mi ubicación actual</span></button>
+        <div class="gps-note" id="${pref}gnote">${icon('shield')}<span>${NATIVE ? 'Tu iPhone' : 'Tu navegador'} te pedirá permiso para usar tu ubicación. Solo se usa para marcar tu puesto.</span></div>
+        <div class="mapa mt8" id="${pref}map"></div>
+        <div class="map-bar"><span class="small muted">o toca el mapa / arrastra el pin</span><span class="map-coord mono" id="${pref}coord">Sin ubicación</span></div>
         <div class="zona-estado" id="${pref}estado">${icon('pin')}<span>Marca tu puesto dentro de las colonias resaltadas en amarillo</span></div>
         <div class="hint" id="${pref}mhint">Toca el mapa o arrastra el pin para marcar dónde está tu puesto.</div></div>`;
   // Liga el mapa y el botón de GPS. Devuelve un objeto con la posición elegida.
@@ -277,16 +279,31 @@
     if (!st.sel) root.querySelector(`#${pref}map`).innerHTML = '<div class="empty">No se pudo cargar el mapa.</div>';
     pinta();
     if (st.pos && st.sel) st.sel.estado(!!st.col);
+    const note = root.querySelector(`#${pref}gnote`);
+    const notaPermiso = (estadoPermiso) => {
+      if (estadoPermiso === 'granted') note.innerHTML = `${icon('check')}<span>Permiso de ubicación concedido.</span>`;
+      if (estadoPermiso === 'denied') note.innerHTML = `${icon('alert')}<span>El permiso de ubicación está bloqueado en tu navegador. Actívalo junto a la dirección de la página, o marca el pin a mano.</span>`;
+    };
+    if (!NATIVE && OleoMapa.permisoWeb) OleoMapa.permisoWeb().then(notaPermiso);
     gps.onclick = async () => {
-      const t = gps.querySelector('span'); gps.disabled = true; t.textContent = 'Buscando…';
+      const t = gps.querySelector('span'); gps.disabled = true; t.textContent = 'Obteniendo ubicación…';
       try {
         const p = await OleoMapa.ubicar();
         st.sel && st.sel.poner(p.lat, p.lng, true, true);
+        st.sel && st.sel.precision(p.lat, p.lng, p.precision);
         const prec = p.precision ? ` (precisión ≈ ${Math.round(p.precision)} m)` : '';
-        hint.textContent = st.col ? `Ubicación obtenida${prec}. Ajusta el pin si hace falta.` : `Tu ubicación actual${prec} está fuera de la zona piloto. Mueve el pin a tu puesto.`;
+        hint.textContent = st.col ? `Ubicación actual colocada${prec}. Ajusta el pin si tu puesto está a unos metros.` : `Tu ubicación actual${prec} está fuera de la zona piloto. Si tu puesto está en otra parte, mueve el pin hasta él.`;
+        note.innerHTML = `${icon('check')}<span>Permiso de ubicación concedido.</span>`; note.className = 'gps-note ok';
         haptic(st.col ? 'success' : 'light');
-      } catch (e) { hint.textContent = e.message; haptic('light'); }
-      gps.disabled = false; t.textContent = 'Usar mi ubicación';
+      } catch (e) {
+        hint.textContent = e.message; haptic('light');
+        if (e.codigo === 'denegado') {
+          note.className = 'gps-note mal';
+          note.innerHTML = `${icon('alert')}<span>Permiso de ubicación denegado.</span>` + (NATIVE ? ` <button type="button" class="link" id="${pref}ajustes">Abrir Ajustes</button>` : '');
+          const b = root.querySelector(`#${pref}ajustes`); if (b) b.onclick = () => OleoMapa.abrirAjustes();
+        }
+      }
+      gps.disabled = false; t.textContent = 'Usar mi ubicación actual';
     };
     return st;
   }
