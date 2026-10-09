@@ -48,6 +48,7 @@
   const alta = async (datos) => { const r = await accion('alta', datos); r.ok = r.ok && !!(r.data && r.data.generador); return r; };
   const altaRecolector = (datos) => accion('alta_recolector', datos);
   const loginRecolector = (id, contrasena) => accion('login_recolector', { id, contrasena });
+  const actualizarUbicacion = (id, nombre, lat, lng) => accion('ubicacion', { id, nombre, lat, lng });
 
   // CSV → arreglo de objetos (respeta comillas y comas dentro de los campos)
   function parseCSV(text) {
@@ -93,7 +94,7 @@
   }
 
   window.OleoCloud = {
-    CLOUD, enabled, enviar, alta, altaRecolector, loginRecolector, hoja, parseCSV, fetchResultado,
+    CLOUD, enabled, enviar, alta, altaRecolector, loginRecolector, actualizarUbicacion, hoja, parseCSV, fetchResultado,
     sheetUrl: () => `https://docs.google.com/spreadsheets/d/${CLOUD.sheetId}/edit`,
   };
 })();

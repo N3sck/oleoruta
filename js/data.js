@@ -24,17 +24,20 @@
   // Zona piloto: solo estas colonias pueden crear cuenta e iniciar sesión (negocios).
   // Cada colonia se asigna sola a una de las 3 zonas de recolección (lotes de 20 L).
   const COLONIAS = [
-    { colonia: 'Narvarte', zona: 'Narvarte', alcaldia: 'Benito Juárez' },
-    { colonia: 'Del Valle', zona: 'Narvarte', alcaldia: 'Benito Juárez' },
-    { colonia: 'Condesa', zona: 'Narvarte', alcaldia: 'Cuauhtémoc' },
-    { colonia: 'Roma Norte', zona: 'Narvarte', alcaldia: 'Cuauhtémoc' },
-    { colonia: 'Polanco', zona: 'Polanco', alcaldia: 'Miguel Hidalgo' },
-    { colonia: 'Lomas de Chapultepec', zona: 'Polanco', alcaldia: 'Miguel Hidalgo' },
-    { colonia: 'Santa Fe', zona: 'Polanco', alcaldia: 'Cuajimalpa' },
-    { colonia: 'Portales', zona: 'Portales', alcaldia: 'Benito Juárez' },
-    { colonia: 'Coyoacán', zona: 'Portales', alcaldia: 'Coyoacán' },
-    { colonia: 'San Ángel', zona: 'Portales', alcaldia: 'Álvaro Obregón' },
+    { colonia: 'Narvarte', zona: 'Narvarte', alcaldia: 'Benito Juárez', lat: 19.396, lng: -99.156 },
+    { colonia: 'Del Valle', zona: 'Narvarte', alcaldia: 'Benito Juárez', lat: 19.38, lng: -99.165 },
+    { colonia: 'Condesa', zona: 'Narvarte', alcaldia: 'Cuauhtémoc', lat: 19.412, lng: -99.174 },
+    { colonia: 'Roma Norte', zona: 'Narvarte', alcaldia: 'Cuauhtémoc', lat: 19.418, lng: -99.161 },
+    { colonia: 'Polanco', zona: 'Polanco', alcaldia: 'Miguel Hidalgo', lat: 19.433, lng: -99.195 },
+    { colonia: 'Lomas de Chapultepec', zona: 'Polanco', alcaldia: 'Miguel Hidalgo', lat: 19.423, lng: -99.216 },
+    { colonia: 'Santa Fe', zona: 'Polanco', alcaldia: 'Cuajimalpa', lat: 19.36, lng: -99.26 },
+    { colonia: 'Portales', zona: 'Portales', alcaldia: 'Benito Juárez', lat: 19.368, lng: -99.146 },
+    { colonia: 'Coyoacán', zona: 'Portales', alcaldia: 'Coyoacán', lat: 19.35, lng: -99.162 },
+    { colonia: 'San Ángel', zona: 'Portales', alcaldia: 'Álvaro Obregón', lat: 19.346, lng: -99.19 },
   ];
+  // Centros de referencia (dentro de cada polígono) para centrar el mapa
+  const CEN = (window.OLEO_ZONAS_GEO || {}).centros || {};
+  COLONIAS.forEach(c => { if (CEN[c.colonia]) { c.lat = CEN[c.colonia][0]; c.lng = CEN[c.colonia][1]; } });
   const sinAcentos = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   // «Narvarte Poniente», «Portales Norte», «Del Valle Centro»… cuentan como su colonia base
   function coloniaPermitida(texto) {
@@ -44,12 +47,12 @@
 
   // Hoja «Generadores» (datos de prueba del equipo)
   const GENERADORES = [
-    { id: 'GEN-001', nombre: 'Tacos Don Beto', tipo: 'Puesto de tacos', responsable: 'Roberto M.', telefono: '5500000001', colonia: 'Narvarte Poniente', zona: 'Narvarte', litrosSemana: 5, clabe: '646180000000000011', fechaAlta: '2026-10-05', contenedor: 20 },
-    { id: 'GEN-002', nombre: 'Quesadillas Doña Lupe', tipo: 'Puesto de quesadillas', responsable: 'Guadalupe R.', telefono: '5500000002', colonia: 'Narvarte Poniente', zona: 'Narvarte', litrosSemana: 15, clabe: '646180000000000022', fechaAlta: '2026-10-05', contenedor: 20 },
-    { id: 'GEN-003', nombre: 'Tianguis del Martes – Pasillo A', tipo: 'Tianguis (contenedor)', responsable: 'Mesa directiva', telefono: '5500000003', colonia: 'Polanco', zona: 'Polanco', litrosSemana: 40, clabe: '646180000000000033', fechaAlta: '2026-10-05', contenedor: 200 },
-    { id: 'GEN-004', nombre: 'Garnachas El Portal', tipo: 'Fritanga', responsable: 'Jorge P.', telefono: '5500000004', colonia: 'Portales Norte', zona: 'Portales', litrosSemana: 5, clabe: '646180000000000044', fechaAlta: '2026-10-05', contenedor: 20 },
-    { id: 'GEN-005', nombre: 'Churros La Esquina', tipo: 'Puesto de churros', responsable: 'Ana L.', telefono: '5500000005', colonia: 'Portales Norte', zona: 'Portales', litrosSemana: 6, clabe: '646180000000000055', fechaAlta: '2026-10-05', contenedor: 20 },
-    { id: 'GEN-006', nombre: 'Tacos de Canasta Rosy', tipo: 'Puesto de tacos', responsable: 'Rosa H.', telefono: '5500000006', colonia: 'Polanco', zona: 'Polanco', litrosSemana: 8, clabe: '646180000000000066', fechaAlta: '2026-10-05', contenedor: 20 },
+    { id: 'GEN-001', nombre: 'Tacos Don Beto', tipo: 'Puesto de tacos', responsable: 'Roberto M.', telefono: '5500000001', colonia: 'Narvarte Poniente', zona: 'Narvarte', litrosSemana: 5, clabe: '646180000000000011', fechaAlta: '2026-10-05', contenedor: 20, lat: 19.3968, lng: -99.1553 },
+    { id: 'GEN-002', nombre: 'Quesadillas Doña Lupe', tipo: 'Puesto de quesadillas', responsable: 'Guadalupe R.', telefono: '5500000002', colonia: 'Narvarte Poniente', zona: 'Narvarte', litrosSemana: 15, clabe: '646180000000000022', fechaAlta: '2026-10-05', contenedor: 20, lat: 19.3993, lng: -99.1588 },
+    { id: 'GEN-003', nombre: 'Tianguis del Martes – Pasillo A', tipo: 'Tianguis (contenedor)', responsable: 'Mesa directiva', telefono: '5500000003', colonia: 'Polanco', zona: 'Polanco', litrosSemana: 40, clabe: '646180000000000033', fechaAlta: '2026-10-05', contenedor: 200, lat: 19.4335, lng: -99.1938 },
+    { id: 'GEN-004', nombre: 'Garnachas El Portal', tipo: 'Fritanga', responsable: 'Jorge P.', telefono: '5500000004', colonia: 'Portales Norte', zona: 'Portales', litrosSemana: 5, clabe: '646180000000000044', fechaAlta: '2026-10-05', contenedor: 20, lat: 19.3712, lng: -99.1445 },
+    { id: 'GEN-005', nombre: 'Churros La Esquina', tipo: 'Puesto de churros', responsable: 'Ana L.', telefono: '5500000005', colonia: 'Portales Norte', zona: 'Portales', litrosSemana: 6, clabe: '646180000000000055', fechaAlta: '2026-10-05', contenedor: 20, lat: 19.3698, lng: -99.1478 },
+    { id: 'GEN-006', nombre: 'Tacos de Canasta Rosy', tipo: 'Puesto de tacos', responsable: 'Rosa H.', telefono: '5500000006', colonia: 'Polanco', zona: 'Polanco', litrosSemana: 8, clabe: '646180000000000066', fechaAlta: '2026-10-05', contenedor: 20, lat: 19.4298, lng: -99.2011 },
   ];
 
   // Patrón de uso simulado de cada puesto (cada cuántos días entrega y a qué hora)
@@ -145,7 +148,7 @@
       { id: 'SOL-0005', idGenerador: 'GEN-006', fecha: '2026-09-24T09:05:00', litrosEstimados: 10, nota: 'Estoy en la esquina de Dr. Vértiz.', estado: 'ATENDIDA' },
     ];
 
-    return { version: 2, config: cfg, generadores: GENERADORES.map(g => ({ ...g })), recolecciones, lotes, solicitudes, creado: iso(new Date()) };
+    return { version: 3, config: cfg, generadores: GENERADORES.map(g => ({ ...g })), recolecciones, lotes, solicitudes, creado: iso(new Date()) };
 
     function zonaDe(id) { return GENERADORES.find(g => g.id === id).zona; }
   }
@@ -154,7 +157,7 @@
   let db = null;
   function load() {
     try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
-    if (!db || db.version !== 2) { db = seed(); save(); }   // v2: Doctores → Polanco (zona piloto)
+    if (!db || db.version !== 3) { db = seed(); save(); }   // v3: ubicación de los negocios
     return db;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { console.warn('No se pudo guardar', e); } }
@@ -307,7 +310,38 @@
       colonia: r.Colonia || r.colonia || '', zona: zonaDe(r.Colonia || r.colonia, r.Zona || r.zona),
       litrosSemana: +(r.Litros_Semana || r.litros_semana) || 5, clabe: String(r.CLABE_Simulada || r.clabe || '').replace(/\D/g, ''),
       fechaAlta: fechaISO(r.Fecha_Alta || r.fecha_alta), contenedor: /tianguis/i.test(tipo) ? 200 : 20,
+      lat: num(r.Latitud ?? r.lat), lng: num(r.Longitud ?? r.lng), ubicacionFecha: r.Ubicacion_Fecha || r.ubicacion_fecha || '',
     };
+  }
+
+  const num = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(n) ? n : null; };
+
+  // Distancia en km entre dos puntos (fórmula del haversine)
+  function distanciaKm(a, b) {
+    const R = 6371, rad = (x) => x * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  // Colonia de la zona piloto que CONTIENE el punto (polígonos de js/zonas_geo.js); null si está fuera
+  function dentroAnillo(lat, lng, ring) {
+    let ins = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const yi = ring[i][0], xi = ring[i][1], yj = ring[j][0], xj = ring[j][1];
+      if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) ins = !ins;
+    }
+    return ins;
+  }
+  function coloniaDePunto(pos) {
+    const G = (window.OLEO_ZONAS_GEO || {}).poligonos || {};
+    const nombre = Object.keys(G).find(c => G[c].some(r => dentroAnillo(pos.lat, pos.lng, r)));
+    return nombre ? COLONIAS.find(c => c.colonia === nombre) : null;
+  }
+  // Colonia permitida más cercana a un punto (null si está a más de 2.5 km de todas)
+  function coloniaCercana(pos, maxKm = 2.5) {
+    let mejor = null, dMin = Infinity;
+    COLONIAS.forEach(c => { const d = distanciaKm(pos, c); if (d < dMin) { dMin = d; mejor = c; } });
+    return dMin <= maxKm ? { ...mejor, km: dMin } : null;
   }
 
   // Agrega o actualiza un generador con los datos de la nube (no toca su historial)
@@ -315,7 +349,11 @@
     if (!g) return null;
     const i = db.generadores.findIndex(x => x.id === g.id);
     if (i < 0) db.generadores.push(g);
-    else db.generadores[i] = { ...db.generadores[i], ...g, contenedor: db.generadores[i].contenedor || g.contenedor };
+    else {
+      const prev = db.generadores[i];
+      db.generadores[i] = { ...prev, ...g, contenedor: prev.contenedor || g.contenedor,
+        lat: g.lat ?? prev.lat ?? null, lng: g.lng ?? prev.lng ?? null, ubicacionFecha: g.ubicacionFecha || prev.ubicacionFecha || '' };
+    }
     save();
     return gen(g.id);
   }
@@ -337,6 +375,7 @@
     load, save, reset, get db() { return db; }, ZONAS, COLONIAS, coloniaPermitida, iso,
     gen, rec, recsDe, zonas, zona, resumen, nivelEstimado, rutaDelDia,
     registrarEntrega, liquidar, enviarLote, altaGenerador, siguienteId, solicitar, setConfig,
-    TIPOS, desdeHoja, upsertGenerador,
+    TIPOS, desdeHoja, upsertGenerador, distanciaKm, coloniaCercana, coloniaDePunto,
+    setUbicacion: (id, lat, lng) => { const g = gen(id); if (g) { g.lat = lat; g.lng = lng; g.ubicacionFecha = iso(new Date()).replace('T', ' ').slice(0, 16); save(); } return g; },
   };
 })();

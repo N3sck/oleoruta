@@ -18,6 +18,7 @@
   window.OleoPrint = () => NATIVE ? post({ type: 'print' }) : window.print();
   window.OleoNative = {
     scanResult: (code) => handleCode(code),
+    locationResult: (json) => window.OleoMapa && OleoMapa.resultadoNativo(json),
     scanCancelled: () => { },
     scanUnavailable: () => U.toast('Cámara no disponible · usa la simulación', 'camera'),
     fetchResult: (json) => window.OleoCloud && OleoCloud.fetchResultado(json),
@@ -245,6 +246,51 @@
     app.querySelector('#entrar').onclick = () => { recNuevo = null; iniciarRec(r); };
   }
 
+  // ---------- Ubicación en mapa (crear cuenta y perfil) ----------
+  const coordTxt = (p) => p ? `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}` : 'Sin ubicación';
+  const campoUbicacion = (pref, titulo = 'Ubicación del negocio') => `
+      <div class="field"><label>${titulo}</label>
+        <div class="mapa" id="${pref}map"></div>
+        <div class="map-bar"><button type="button" class="btn small ghost" id="${pref}gps">${icon('pin')}<span>Usar mi ubicación</span></button><span class="map-coord mono" id="${pref}coord">Sin ubicación</span></div>
+        <div class="zona-estado" id="${pref}estado">${icon('pin')}<span>Marca tu puesto dentro de las colonias resaltadas en amarillo</span></div>
+        <div class="hint" id="${pref}mhint">Toca el mapa o arrastra el pin para marcar dónde está tu puesto.</div></div>`;
+  // Liga el mapa y el botón de GPS. Devuelve un objeto con la posición elegida.
+  function bindUbicacion(root, pref, { pos = null, centro = null, onCambio } = {}) {
+    const st = { pos: pos && pos.lat != null ? { lat: pos.lat, lng: pos.lng } : null, sel: null };
+    const coord = root.querySelector(`#${pref}coord`), hint = root.querySelector(`#${pref}mhint`), gps = root.querySelector(`#${pref}gps`);
+    const est = root.querySelector(`#${pref}estado`);
+    // Confirmación visible: ¿el pin cae dentro de alguna colonia de la zona piloto?
+    const pinta = () => {
+      coord.textContent = coordTxt(st.pos); coord.classList.toggle('on', !!st.pos);
+      st.col = st.pos ? D.coloniaDePunto(st.pos) : null;
+      if (!st.pos) return;
+      est.className = 'zona-estado ' + (st.col ? 'ok' : 'mal');
+      est.innerHTML = st.col
+        ? `${icon('check')}<span><b>Dentro de la zona piloto</b> · ${esc(st.col.colonia)} (zona ${esc(st.col.zona)})</span>`
+        : `${icon('alert')}<span><b>Fuera de la zona piloto</b> · mueve el pin dentro de una colonia amarilla</span>`;
+      st.sel && st.sel.estado(!!st.col);
+    };
+    const cambio = (p) => { st.pos = { lat: p.lat, lng: p.lng }; pinta(); onCambio && onCambio(st.pos, st.col); };
+    st.sel = window.OleoMapa ? OleoMapa.selector(root.querySelector(`#${pref}map`), {
+      centro: st.pos ? [st.pos.lat, st.pos.lng] : (centro || OleoMapa.CDMX), zoom: st.pos ? 16 : 12, pos: st.pos, zonas: D.COLONIAS, onCambio: cambio,
+    }) : null;
+    if (!st.sel) root.querySelector(`#${pref}map`).innerHTML = '<div class="empty">No se pudo cargar el mapa.</div>';
+    pinta();
+    if (st.pos && st.sel) st.sel.estado(!!st.col);
+    gps.onclick = async () => {
+      const t = gps.querySelector('span'); gps.disabled = true; t.textContent = 'Buscando…';
+      try {
+        const p = await OleoMapa.ubicar();
+        st.sel && st.sel.poner(p.lat, p.lng, true, true);
+        const prec = p.precision ? ` (precisión ≈ ${Math.round(p.precision)} m)` : '';
+        hint.textContent = st.col ? `Ubicación obtenida${prec}. Ajusta el pin si hace falta.` : `Tu ubicación actual${prec} está fuera de la zona piloto. Mueve el pin a tu puesto.`;
+        haptic(st.col ? 'success' : 'light');
+      } catch (e) { hint.textContent = e.message; haptic('light'); }
+      gps.disabled = false; t.textContent = 'Usar mi ubicación';
+    };
+    return st;
+  }
+
   // Formulario de alta (lo usan «Crear cuenta» y el alta de puesto del recolector)
   function formAlta(prefijo) {
     return `
@@ -255,11 +301,26 @@
       <div class="field"><label>Teléfono (WhatsApp)</label><div class="inp">${icon('phone')}<input name="telefono" inputmode="numeric" maxlength="14" autocomplete="tel-national" placeholder="10 dígitos"></div></div>
       <div class="field"><label>Colonia <span class="muted">· zona piloto</span></label>
         <div class="colonias" id="${prefijo}col">${D.COLONIAS.map(c => `<button type="button" class="col" data-col="${esc(c.colonia)}"><b>${esc(c.colonia)}</b><span>${esc(c.alcaldia)}</span></button>`).join('')}</div>
-        <div class="hint" id="${prefijo}zhint">OleoRuta opera por ahora solo en estas colonias. La zona de recolección se asigna sola.</div></div>`;
+        <div class="hint" id="${prefijo}zhint">OleoRuta opera por ahora solo en estas colonias. La zona de recolección se asigna sola.</div></div>
+      ${campoUbicacion(prefijo)}`;
   }
   function bindAlta(root, prefijo, onDone) {
     const f = root.querySelector('form'), err = root.querySelector('#err'), btn = root.querySelector('button[type=submit]');
     let tipo = D.TIPOS[0].valor, colonia = null;
+    const marcaColonia = (c) => {
+      root.querySelectorAll(`#${prefijo}col .col`).forEach(x => x.classList.toggle('on', x.dataset.col === c.colonia));
+      colonia = D.coloniaPermitida(c.colonia);
+      root.querySelector(`#${prefijo}zhint`).innerHTML = `Zona de recolección: <b style="color:var(--oil)">${esc(colonia.zona)}</b> · ${esc(colonia.alcaldia)}`;
+    };
+    const ubic = bindUbicacion(root, prefijo, {
+      onCambio: (p, col) => {
+        const h = root.querySelector(`#${prefijo}mhint`);
+        if (col && (!colonia || colonia.colonia !== col.colonia)) { marcaColonia(col); h.textContent = `El pin está en ${col.colonia}: elegimos esa colonia por ti.`; }
+        else if (col) h.textContent = 'Listo. Puedes arrastrar el pin para ajustarlo.';
+        else h.textContent = 'Solo se pueden registrar puestos dentro de las colonias marcadas en amarillo.';
+        if (col && /ubicación|zona piloto/.test(err.textContent)) err.innerHTML = '';
+      },
+    });
     root.querySelectorAll(`#${prefijo}tipos .tipo`).forEach(b => b.onclick = () => {
       root.querySelectorAll(`#${prefijo}tipos .tipo`).forEach(x => x.classList.remove('on')); b.classList.add('on'); tipo = b.dataset.tipo; haptic('light');
       b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -269,16 +330,21 @@
       colonia = D.coloniaPermitida(b.dataset.col);
       if (/colonia/.test(err.textContent)) err.innerHTML = '';
       root.querySelector(`#${prefijo}zhint`).innerHTML = `Zona de recolección: <b style="color:var(--oil)">${esc(colonia.zona)}</b> · ${esc(colonia.alcaldia)}`;
+      if (ubic.sel && !ubic.pos) ubic.sel.centrar(colonia.lat, colonia.lng, 15);
+      else if (ubic.col && ubic.col.colonia !== colonia.colonia) root.querySelector(`#${prefijo}mhint`).textContent = `Ojo: el pin está en ${ubic.col.colonia}. Muévelo a ${colonia.colonia} o elige ${ubic.col.colonia}.`;
     });
     f.telefono.oninput = () => { f.telefono.value = f.telefono.value.replace(/\D/g, '').slice(0, 10); };
     f.onsubmit = async (e) => {
       e.preventDefault();
-      const d = { nombre: f.nombre.value.trim().replace(/\s+/g, ' '), tipo, responsable: f.responsable.value.trim(), telefono: f.telefono.value, colonia: colonia ? colonia.colonia : '', zona: colonia ? colonia.zona : '' };
+      const d = { nombre: f.nombre.value.trim().replace(/\s+/g, ' '), tipo, responsable: f.responsable.value.trim(), telefono: f.telefono.value, colonia: colonia ? colonia.colonia : '', zona: colonia ? colonia.zona : '', lat: ubic.pos ? ubic.pos.lat : '', lng: ubic.pos ? ubic.pos.lng : '' };
       const faltan = [];
       if (d.nombre.length < 3) faltan.push('el nombre del negocio (mínimo 3 letras)');
       if (d.responsable.length < 2) faltan.push('el nombre del responsable');
       if (!/^\d{10}$/.test(d.telefono)) faltan.push('un teléfono de 10 dígitos');
       if (!colonia) faltan.push('tu colonia (de la lista)');
+      if (!ubic.pos) faltan.push('la ubicación en el mapa');
+      else if (!ubic.col) faltan.push('una ubicación dentro de la zona piloto (el pin está fuera)');
+      else if (colonia && ubic.col.colonia !== colonia.colonia) faltan.push(`que el pin esté en ${colonia.colonia} (ahora está en ${ubic.col.colonia})`);
       const fail = (m) => { err.innerHTML = `<div class="field"><div class="err">${m}</div></div>`; haptic('light'); };
       if (faltan.length) return fail('Falta ' + faltan.join(', ') + '.');
       if (db().generadores.some(g => norm(g.nombre) === norm(d.nombre))) return fail('Ya existe una cuenta con ese nombre de negocio.');
@@ -381,6 +447,10 @@
   // Ruta del día
   function RRuta() {
     const ruta = D.rutaDelDia();
+    setTimeout(() => {
+      const el = app.querySelector('#rmap'); if (!el || !window.OleoMapa) return;
+      OleoMapa.puntos(el, ruta.map((p, i) => ({ lat: p.g.lat, lng: p.g.lng, txt: p.estado === 'RECOLECTADO' ? '✓' : String(i + 1), cls: p.estado === 'RECOLECTADO' ? 'ok' : '', titulo: esc(p.g.nombre), sub: `${p.g.id} · ${esc(p.g.colonia)}`, href: `#/r/puesto/${p.g.id}` })), { zonas: D.COLONIAS });
+    });
     const zs = D.zonas().filter(z => z.estatus === 'LISTO PARA PLANTA');
     const est = ruta.filter(p => p.estado === 'PENDIENTE').reduce((s, p) => s + p.n.litros, 0);
     return `<div class="screen">
@@ -390,6 +460,7 @@
         <div class="tile"><span class="label">Hechas</span><div class="v num">${ruta.filter(p => p.estado === 'RECOLECTADO').length}</div></div>
         <div class="tile oil"><span class="label">Estimado</span><div class="v num">${fmt.n(est)}<small>L</small></div></div>
       </div>
+      <div class="card flush mapcard mt16"><div class="mapa" id="rmap"></div></div>
       <div class="steps card">
         ${ruta.map((p, i) => `<a class="step ${p.estado === 'RECOLECTADO' ? 'done' : ''}" href="${p.estado === 'RECOLECTADO' ? `#/r/comprobante/${p.rec.id}` : `#/r/puesto/${p.g.id}`}" style="display:flex">
           <span class="si">${p.estado === 'RECOLECTADO' ? icon('check') : `<b style="font-size:13px">${i + 1}</b>`}</span>
@@ -500,6 +571,7 @@
   // P3 · Ficha del puesto
   function RPuesto(id) {
     const g = D.gen(id); if (!g) return notFound('#/r/puestos');
+    setTimeout(() => { const el = app.querySelector('#fmap'); if (el && window.OleoMapa) OleoMapa.puntos(el, [{ lat: g.lat, lng: g.lng, txt: '', cls: 'yo' }], { zoom: 16, estatico: true }); });
     const rs = D.recsDe(id), n = D.nivelEstimado(g), z = D.zona(g.zona);
     const tot = rs.reduce((s, r) => s + r.litros, 0), pago = rs.reduce((s, r) => s + r.pago, 0);
     const sol = db().solicitudes.find(s => s.idGenerador === id && s.estado === 'ABIERTA');
@@ -524,6 +596,7 @@
         ${row(`tel:${g.telefono}`, 'phone', fmt.tel(g.telefono), 'Teléfono · WhatsApp')}
         ${row('#/r/zonas', 'pin', esc(g.colonia), `Zona ${g.zona} · alta ${fmt.fechaL(g.fechaAlta + 'T12:00')}`)}
       </div>
+      ${g.lat != null ? `<div class="card flush mapcard"><div class="mapa sm" id="fmap"></div><a class="row" href="${OleoMapa.enlaceComoLlegar(g.lat, g.lng)}" target="_blank" rel="noopener noreferrer"><span class="ri">${icon('route')}</span><span class="rt"><b>Cómo llegar</b><span>${coordTxt(g)} · abre la app de mapas</span></span>${icon('chev', 'chev')}</a></div>` : ''}
       <a class="btn mt24" href="#/r/entrega/${g.id}">${icon('drop')}Registrar entrega</a>
     </div>${tabbarR('ruta')}`;
   }
@@ -1137,11 +1210,47 @@
         ${kvRow('CLABE (simulada)', `<span class="mono" style="font-size:13px">${fmt.clabeFull(g.clabe)}</span>`)}
         ${kvRow('Fecha de alta', fmt.fechaL(g.fechaAlta + 'T12:00'))}
       </div>
+      <div class="section-title"><span class="label">Ubicación del puesto</span><span class="small muted" id="pufecha">${g.ubicacionFecha && g.ubicacionFecha !== 'muestra' ? 'Actualizada ' + esc(g.ubicacionFecha) : g.lat != null ? 'Registrada' : 'Sin registrar'}</span></div>
+      <div class="card">
+        ${campoUbicacion('p', 'El recolector usa este punto para llegar a tu puesto')}
+        <div id="perr"></div>
+        <button class="btn small mt8" id="pguardar" disabled>${icon('check')}<span>Guardar ubicación</span></button>
+      </div>
       <div class="rows">
         <a class="row" href="#/login" data-act="logout"><span class="ri">${icon('logout')}</span><span class="rt"><b>Cerrar sesión</b></span></a>
       </div>
       <p class="foot-note">Tus datos se usan solo para pagarte y rastrear tu aceite.<br>OleoRuta · prototipo</p>
     </div>${tabbarG(g.id, 'perfil')}`;
+  }
+  function bindPerfil(g) {
+    const btn = app.querySelector('#pguardar'), err = app.querySelector('#perr');
+    const cent = D.coloniaPermitida(g.colonia);
+    const ubic = bindUbicacion(app, 'p', {
+      pos: g.lat != null ? { lat: g.lat, lng: g.lng } : null, centro: cent ? [cent.lat, cent.lng] : null,
+      onCambio: (p, col) => {
+        btn.disabled = !col; err.innerHTML = '';
+        const base = D.coloniaPermitida(g.colonia);
+        app.querySelector('#pmhint').textContent = !col ? 'No se puede guardar: el pin está fuera de la zona piloto.'
+          : base && base.colonia !== col.colonia ? `Al guardar, tu colonia cambiará a ${col.colonia} (zona ${col.zona}).` : 'Toca «Guardar ubicación» para actualizarla.';
+      },
+    });
+    btn.onclick = async () => {
+      if (!ubic.pos) return;
+      if (!ubic.col) { err.innerHTML = '<div class="field"><div class="err">La ubicación debe estar dentro de la zona piloto.</div></div>'; return; }
+      if (!window.OleoCloud || !OleoCloud.enabled()) { err.innerHTML = '<div class="field"><div class="err">Se necesita conexión a internet para guardar.</div></div>'; return; }
+      btn.disabled = true; btn.querySelector('span').textContent = 'Guardando…';
+      let r; try { r = await OleoCloud.actualizarUbicacion(g.id, g.nombre, ubic.pos.lat, ubic.pos.lng); } catch (e) { r = { ok: false }; }
+      btn.querySelector('span').textContent = 'Guardar ubicación';
+      if (!r.ok) {
+        const m = r.data && /litros|ID de generador/.test(r.data.error || '') ? 'El servidor aún no tiene activada la ubicación (falta publicar la nueva versión del Apps Script).' : (r.data && r.data.error) || 'No se pudo conectar con el servidor.';
+        btn.disabled = false; err.innerHTML = `<div class="field"><div class="err">${esc(m)}</div></div>`; return;
+      }
+      D.setUbicacion(g.id, r.data.lat, r.data.lng);
+      if (r.data.colonia && r.data.colonia !== g.colonia) { g.colonia = r.data.colonia; g.zona = r.data.zona; D.save(); }
+      app.querySelector('#pufecha').textContent = 'Actualizada ' + r.data.fecha;
+      app.querySelector('#pmhint').textContent = 'Ubicación guardada en BD_OleoRuta.';
+      haptic('success'); U.toast('Ubicación actualizada');
+    };
   }
 
   function notFound(back) { return `<div class="screen">${top('No encontrado', back)}<div class="empty">El registro no existe.</div></div>`; }
@@ -1185,7 +1294,7 @@
       if (!D.coloniaPermitida(g.colonia) && !dev) { setSession(null); return go('#/login'); }
       setSession({ role: 'G', id: g.id });
       const v = parts[2], a = parts[3];
-      html = ({ inicio: () => GInicio(g), entregas: () => GEntregas(g), comprobante: () => GComprobante(g, a), qr: () => GQR(g), impacto: () => GImpacto(g), perfil: () => GPerfil(g) }[v] || (() => GInicio(g)))();
+      html = ({ inicio: () => GInicio(g), entregas: () => GEntregas(g), comprobante: () => GComprobante(g, a), qr: () => GQR(g), impacto: () => GImpacto(g), perfil: () => { setTimeout(() => bindPerfil(g)); return GPerfil(g); } }[v] || (() => GInicio(g)))();
     } else return go('#/login');
     app.innerHTML = html;
     after();
