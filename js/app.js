@@ -75,6 +75,50 @@
   const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const normId = (t) => { const m = String(t || '').toUpperCase().match(/GEN\s*-?\s*(\d{1,4})/); return m ? 'GEN-' + m[1].padStart(3, '0') : null; };
 
+  // ---------- Sincronización: lo que registra un teléfono lo ven todos ----------
+  let syncEnCurso = false, ultimaSync = 0;
+  const firma = () => { const d = db(); return [d.recolecciones.length, d.solicitudes.length, d.lotes.length,
+    d.recolecciones.filter(r => r.estadoLote === 'EN PLANTA').length, d.solicitudes.filter(s => s.estado === 'ABIERTA').length, d.generadores.length].join('|'); };
+  const VISTAS_VIVAS = /^#\/(g\/[^/]+\/(inicio|entregas|impacto)|r\/(inicio|ruta|zonas|tablero|puestos|puesto|monitor))/;
+  async function sincronizarNube(manual = false) {
+    if (syncEnCurso || !window.OleoCloud || !OleoCloud.enabled()) return;
+    const ses = getSession(); if (!ses) return;
+    syncEnCurso = true; pintaSync('sync');
+    try {
+      const antes = firma();
+      await sincronizarCuentas();
+      const [recs, avisos, lotes] = await Promise.all([
+        OleoCloud.hoja('Recolecciones', 'ID_Recoleccion'), OleoCloud.hoja('Avisos', 'ID_Aviso').catch(() => []), OleoCloud.hoja('Lotes', 'ID_Lote').catch(() => [])]);
+      const conocidos = new Set(db().generadores.map(g => g.id));
+      const nuevos = D.aplicarNube({ recs: recs.filter(r => conocidos.has(String(r.ID_Generador || '').trim())), avisos, lotes });
+      ultimaSync = Date.now(); pintaSync('ok');
+      // Avisos al usuario de lo que llegó de otro teléfono
+      if (ses.role === 'G') {
+        nuevos.recs.filter(r => r.idGenerador === ses.id && r.estatus === 'LIQUIDADO').forEach(r => { haptic('success'); U.toast(`Pago recibido · ${fmt.mxn(r.pago)} por ${fmt.L(r.litros)}`, 'peso'); });
+      } else if (ses.role === 'R') {
+        nuevos.avisos.forEach(a => { const g = D.gen(a.idGenerador); haptic('light'); U.toast(`Nuevo aviso · ${g ? g.nombre : a.idGenerador} tiene ≈ ${fmt.L(a.litrosEstimados)}`, 'bell'); });
+      }
+      const abierta = document.querySelector('.sheet');
+      syncEnCurso = false;
+      if (firma() !== antes && !abierta && VISTAS_VIVAS.test(location.hash)) { const y = window.scrollY; render(); window.scrollTo(0, y); }
+      else if (manual) U.toast('Todo al día', 'check');
+    } catch (e) { pintaSync('error'); }
+    finally { syncEnCurso = false; }
+  }
+  function pintaSync(estado) {
+    const el = document.querySelector('#syncchip'); if (!el) return;
+    if (estado === 'sync') { el.className = 'sync-chip run'; el.innerHTML = `${icon('sync')}Sincronizando…`; return; }
+    if (estado === 'error') { el.className = 'sync-chip err'; el.innerHTML = `${icon('alert')}Sin conexión con la nube`; return; }
+    if (!ultimaSync) { el.className = 'sync-chip'; el.innerHTML = `${icon('sync')}Conectando con la nube…`; return; }
+    const seg = Math.round((Date.now() - ultimaSync) / 1000);
+    el.className = 'sync-chip ok'; el.innerHTML = `${icon('check')}En la nube · ${seg < 10 ? 'ahora' : seg < 60 ? `hace ${seg} s` : `hace ${Math.round(seg / 60)} min`}`;
+  }
+  const syncChip = () => `<button class="sync-chip" id="syncchip" data-act="sync"></button>`;
+  setInterval(() => { if (document.visibilityState === 'visible') sincronizarNube(); }, 25000);
+  setInterval(() => pintaSync(syncEnCurso ? 'sync' : 'ok'), 5000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sincronizarNube(); });
+  window.addEventListener('online', () => sincronizarNube());
+
   // Trae las cuentas de la hoja y las agrega al teléfono (para iniciar sesión y para que el recolector las vea)
   async function sincronizarCuentas() {
     if (!window.OleoCloud) return false;
@@ -151,7 +195,7 @@
       <h2>Tu ruta,<br><em>sin papeleo.</em></h2>
       <p class="lead">${sub}</p>`;
   const normRec = (t) => { const m = String(t || '').toUpperCase().replace(/\s+/g, '').match(/^OR-?(\d{1,3})$/); return m ? 'OR-' + String(+m[1]).padStart(2, '0') : null; };
-  const iniciarRec = (r) => { setSession({ role: 'R', id: r.id_recolector, nombre: r.nombre, telefono: r.telefono }); haptic('success'); go('#/r/inicio'); };
+  const iniciarRec = (r, sesion) => { setSession({ role: 'R', id: r.id_recolector, nombre: r.nombre, telefono: r.telefono, sesion: sesion || '' }); haptic('success'); go('#/r/inicio'); };
   const errCuenta = (data) => {
     const e = (data && data.error) || '';
     if (/litros fuera de rango|ID de generador inválido/.test(e)) return 'El servidor aún no tiene activadas las cuentas de recolector (falta publicar la nueva versión del Apps Script).';
@@ -186,7 +230,7 @@
       try { r = await OleoCloud.loginRecolector(id, f.p.value); } catch (e2) { r = { ok: false, data: null }; }
       btn.disabled = false; btn.querySelector('span').textContent = 'Iniciar sesión';
       if (!r.ok || !r.data.recolector) return fail(errCuenta(r.data));
-      iniciarRec(r.data.recolector);
+      iniciarRec(r.data.recolector, r.data.sesion);
     };
   }
 
@@ -224,7 +268,7 @@
       try { r = await OleoCloud.altaRecolector(d); } catch (e2) { r = { ok: false, data: null }; }
       btn.disabled = false; btn.querySelector('span').textContent = 'Crear cuenta';
       if (!r.ok || !r.data.recolector) return fail(errCuenta(r.data));
-      recNuevo = r.data.recolector; haptic('success');
+      recNuevo = { ...r.data.recolector, _sesion: r.data.sesion }; haptic('success');
       go('#/rbienvenida');
     };
   }
@@ -245,7 +289,7 @@
       <div class="note mt16" style="text-align:left">${icon('info')}<span>Inicia sesión con tu usuario <b>${esc(r.id_recolector)}</b> y tu contraseña. Guárdalos: la contraseña no se puede consultar después.</span></div>
       <button class="btn mt24" id="entrar">${icon('chev')}<span>Empezar mi ruta</span></button>
     </div>`;
-    app.querySelector('#entrar').onclick = () => { recNuevo = null; iniciarRec(r); };
+    app.querySelector('#entrar').onclick = () => { recNuevo = null; iniciarRec(r, r._sesion); };
   }
 
   // ---------- Ubicación en mapa (crear cuenta y perfil) ----------
@@ -747,7 +791,7 @@
       resp = await OleoCloud.enviar({
         id_recoleccion: r.id, fecha: r.fecha.replace('T', ' '), id_generador: g.id, negocio: g.nombre, clabe: g.clabe,
         recolector: r.recolector, litros: r.litros, precio_litro: r.precio, monto: r.pago, agua_protegida_l: r.agua,
-        zona: g.zona, folio: r.folio, foto: r.foto ? 'capturada en la app' : 'demo',
+        zona: g.zona, folio: r.folio, foto: r.foto ? 'capturada en la app' : 'demo', sesion: (yoRec() || {}).sesion || '',
       });
     } catch (e) { resp = { ok: false, error: e.name === 'AbortError' ? 'tiempo agotado' : e.message }; }
     if (!alive) return;
@@ -831,7 +875,7 @@
           <div class="kv"><span>Concepto</span><b>Pago aceite usado ${r.id}</b></div>
           <div class="kv"><span>Lote</span><b>${lote ? `${lote.id} · ${esc(lote.destino)}` : `${g.zona} · ${fmt.pct(z.avance)} ${z.estatus === 'LISTO PARA PLANTA' ? '· listo para planta' : 'acumulado'}`}</b></div>
           <div class="kv"><span>Recolector</span><b>${esc(r.recolector)}</b></div>
-          ${r.pipeline ? `<div class="kv"><span>Tiempo de liquidación</span><b>${fmt.n1(r.pipeline.total / 1000)} s · automático</b></div>` : ''}
+          ${r.pipeline && r.pipeline.total ? `<div class="kv"><span>Tiempo de liquidación</span><b>${fmt.n1(r.pipeline.total / 1000)} s · automático</b></div>` : ''}
           ${r.pipeline && r.pipeline.modo === 'nube' ? `<div class="kv"><span>Registro en la nube</span><b>Apps Script + Google Sheets ✓</b></div>` : ''}
         </div>
       </div>
@@ -955,7 +999,21 @@
       <div class="section-title"><span class="label">Lotes enviados a planta</span></div>
       <div class="rows">${db().lotes.slice().reverse().slice(0, 10).map(l => `<div class="row"><span class="ri">${icon('factory')}</span><span class="rt"><b>${l.id} · ${fmt.L(l.litros)}</b><span>${fmt.fecha(l.fechaEnvio)} · ${l.manifiesto} · ${l.recolecciones} entregas</span></span><span class="pill ok">Entregado</span></div>`).join('')}</div>
     </div>${tabbarR('')}`;
-    setTimeout(() => app.querySelectorAll('[data-lote]').forEach(b => b.onclick = () => { const l = D.enviarLote(b.dataset.lote); if (l) { U.toast(`${l.id} · ${fmt.L(l.litros)} entregado a ${l.destino} · ${l.manifiesto}`, 'factory'); render(); } }));
+    setTimeout(() => app.querySelectorAll('[data-lote]').forEach(b => b.onclick = async () => {
+      const z = D.zona(b.dataset.lote), ses = yoRec();
+      if (!ses || !ses.sesion) { U.toast('Vuelve a iniciar sesión para enviar lotes', 'alert'); setSession(null); return go('#/rlogin'); }
+      if (!window.OleoCloud || !OleoCloud.enabled()) { U.toast('Se necesita conexión para enviar el lote', 'alert'); return; }
+      b.disabled = true; const t = b.lastChild; const txt = t.textContent; t.textContent = ' Enviando…';
+      let r; try { r = await OleoCloud.enviarLote(ses.sesion, z.zona, z.litrosPendientes, z.pendientes.map(x => x.id)); } catch (e) { r = { ok: false }; }
+      if (!r.ok || !r.data.lote) {
+        b.disabled = false; t.textContent = txt;
+        if (r.data && r.data.codigo === 'sesion') { U.toast(r.data.error, 'alert'); setSession(null); return go('#/rlogin'); }
+        const e = (r.data && r.data.error) || 'No se pudo enviar el lote.';
+        U.toast(/litros fuera|ID de generador/.test(e) ? 'Falta publicar la nueva versión del Apps Script' : e, 'alert'); return;
+      }
+      D.aplicarLote(r.data.lote); haptic('success');
+      U.toast(`${r.data.lote.id_lote} · ${fmt.L(r.data.lote.litros)} entregado a ${r.data.lote.destino} · ${r.data.lote.manifiesto}`, 'factory'); render();
+    }));
     return html;
   }
 
@@ -1151,11 +1209,23 @@
       <div class="center mt16"><div class="label">Litros aproximados</div><div class="num" id="al" style="font-size:56px;font-weight:200">${l} L</div></div>
       <div class="stepper mt8"><button id="am">${icon('minus')}</button><span style="width:90px"></span><button id="ap">${icon('plus')}</button></div>
       <div class="field"><label>Nota para el recolector (opcional)</label><textarea id="an" placeholder="Ej. Estoy de 3 a 7 pm"></textarea></div>
-      <button class="btn mt16" id="as">${icon('bell')}Enviar aviso</button>`, (sh, close) => {
+      <button class="btn mt16" id="as">${icon('bell')}<span>Enviar aviso</span></button>`, (sh, close) => {
       const upd = () => sh.querySelector('#al').textContent = l + ' L';
       sh.querySelector('#am').onclick = () => { l = Math.max(1, l - 1); upd(); };
       sh.querySelector('#ap').onclick = () => { l = Math.min(g.contenedor, l + 1); upd(); };
-      sh.querySelector('#as').onclick = () => { D.solicitar(g.id, l, sh.querySelector('#an').value.trim()); close(); U.toast('Aviso enviado · tu puesto está en la ruta', 'bell'); render(); };
+      sh.querySelector('#as').onclick = async () => {
+        const b = sh.querySelector('#as');
+        if (!window.OleoCloud || !OleoCloud.enabled()) { U.toast('Se necesita conexión para enviar el aviso', 'alert'); return; }
+        b.disabled = true; b.lastChild.textContent = 'Enviando…';
+        let r; try { r = await OleoCloud.aviso(g.id, g.nombre, l, sh.querySelector('#an').value.trim()); } catch (e) { r = { ok: false }; }
+        if (!r.ok || !r.data.aviso) {
+          b.disabled = false; b.lastChild.textContent = 'Enviar aviso';
+          const e = (r.data && r.data.error) || 'No se pudo enviar el aviso.';
+          U.toast(/litros fuera|ID de generador/.test(e) ? 'Falta publicar la nueva versión del Apps Script' : e, 'alert'); return;
+        }
+        D.aplicarAviso(r.data.aviso); close(); haptic('success');
+        U.toast('Aviso enviado · el recolector ya lo ve en su ruta', 'bell'); render();
+      };
     });
   }
 
@@ -1352,6 +1422,8 @@
   DESK.addEventListener ? DESK.addEventListener('change', () => render()) : DESK.addListener(() => render());
 
   function after() {
+    if (getSession() && !ultimaSync && !syncEnCurso) setTimeout(() => sincronizarNube());   // primera sincronización al iniciar sesión
+    pintaSync(syncEnCurso ? 'sync' : 'ok');
     layoutDesk();
     U.bindCharts(app);
     const sw = app.querySelector('#sw'); if (sw) sw.onclick = cuentaSheet;
@@ -1363,11 +1435,12 @@
     const t = e.target.closest('[data-act]'); if (!t) return;
     if (t.dataset.act === 'print') { e.preventDefault(); window.OleoPrint(); }
     if (t.dataset.act === 'cuenta') { e.preventDefault(); cuentaSheet(); }
+    if (t.dataset.act === 'sync') { e.preventDefault(); sincronizarNube(true); }
     if (t.dataset.act === 'logout') { try { localStorage.removeItem(SKEY); } catch (err) { } }
   });
   window.addEventListener('hashchange', render);
   render();
-  sincronizarCuentas();
+  sincronizarNube();
 
   if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });

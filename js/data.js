@@ -256,6 +256,8 @@
     item.claveRastreo = (ext && ext.clave_rastreo) || claveRastreo(fl, r);
     item.fechaLiquidacion = (ext && ext.fecha_liquidacion) ? String(ext.fecha_liquidacion).slice(0, 19) : iso(fl);
     item.pipeline = pipeline;
+    if (ext && ext.folio) item.folio = ext.folio;                 // el folio lo asigna el servidor
+    if (ext && ext.id_recolector) item.idRecolector = ext.id_recolector;
     save();
     return item;
   }
@@ -374,13 +376,73 @@
     db.solicitudes.unshift(s); save(); return s;
   }
 
+  // ---------- Datos compartidos (Google Sheets) ----------
+  // Fecha de la hoja → ISO local («2026-10-07 17:41:44», «2026-10-07T17:41:44» o «7/10/2026 17:41:44»)
+  function fechaHoja(v) {
+    const t = String(v || '').trim();
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}T${pad(m[4])}:${m[5]}:${m[6] || '00'}`;
+    m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}T${pad(m[4])}:${m[5]}:${m[6] || '00'}`;
+    return t ? t.slice(0, 19) : iso(new Date());
+  }
+  const n0 = (v) => { const x = parseFloat(String(v ?? '').replace(/[$,\s]/g, '')); return isFinite(x) ? x : 0; };
+
+  // Une lo que hay en la nube con lo local (por ID). Devuelve qué llegó nuevo para avisar al usuario.
+  function aplicarNube({ recs = [], avisos = [], lotes = [] }) {
+    const nuevos = { recs: [], avisos: [] };
+    recs.forEach(r => {
+      const id = String(r.ID_Recoleccion || '').trim(); if (!id) return;
+      const gid = String(r.ID_Generador || '').trim();
+      const etiqueta = r.Recolector || '';
+      const datos = {
+        id, idGenerador: gid, fecha: fechaHoja(r.Fecha), litros: n0(r.Litros), precio: n0(r.Precio_Litro) || db.config.precio_litro,
+        pago: n0(r.Monto_Pago), agua: n0(r.Agua_Protegida_L), estatus: r.Estatus_Pago || 'LIQUIDADO', claveRastreo: r.Clave_Rastreo || null,
+        fechaLiquidacion: r.Fecha_Pago ? fechaHoja(r.Fecha_Pago) : null, estadoLote: r.Estado_Lote || 'PENDIENTE', idLote: r.ID_Lote || null,
+        recolector: etiqueta, idRecolector: r.ID_Recolector || (etiqueta.match(/OR-\d{2,3}/) || ['OR-01'])[0],
+      };
+      const prev = rec(id);
+      if (prev) Object.assign(prev, { estatus: datos.estatus, claveRastreo: datos.claveRastreo || prev.claveRastreo, fechaLiquidacion: datos.fechaLiquidacion || prev.fechaLiquidacion,
+        estadoLote: datos.estadoLote, idLote: datos.idLote || prev.idLote, idRecolector: datos.idRecolector, folio: r.Folio || prev.folio });
+      else {
+        db.recolecciones.push({ ...datos, folio: r.Folio || id, foto: null, pipeline: { modo: 'nube' }, origen: 'nube' });
+        nuevos.recs.push(datos);
+      }
+    });
+    avisos.forEach(a => {
+      const id = String(a.ID_Aviso || '').trim(); if (!id) return;
+      const estado = /ABIERT/.test(a.Estado) ? 'ABIERTA' : 'ATENDIDA';
+      const prev = db.solicitudes.find(s => s.id === id);
+      if (prev) prev.estado = estado;
+      else {
+        const s = { id, idGenerador: String(a.ID_Generador || '').trim(), fecha: fechaHoja(a.Fecha), litrosEstimados: n0(a.Litros_Estimados), nota: a.Nota || '', estado };
+        db.solicitudes.unshift(s); if (estado === 'ABIERTA') nuevos.avisos.push(s);
+      }
+    });
+    lotes.forEach(l => {
+      const id = String(l.ID_Lote || '').trim(); if (!id) return;
+      const ids = String(l.IDs_Recolecciones || '').split(',').map(x => x.trim()).filter(Boolean);
+      ids.forEach(rid => { const x = rec(rid); if (x) { x.estadoLote = 'EN PLANTA'; x.idLote = id; } });
+      if (!db.lotes.some(x => x.id === id)) db.lotes.push({ id, zona: l.Zona, litros: n0(l.Litros), recolecciones: n0(l.Entregas) || ids.length, fechaListo: fechaHoja(l.Fecha_Envio), fechaEnvio: fechaHoja(l.Fecha_Envio), destino: l.Destino || db.config.recicladora, manifiesto: l.Manifiesto || '', estado: l.Estado || 'ENTREGADO A PLANTA', idRecolector: l.ID_Recolector || '' });
+    });
+    // Una entrega atiende los avisos anteriores de ese negocio (también los que solo existen en este teléfono)
+    db.recolecciones.forEach(r => db.solicitudes.forEach(s => { if (s.estado === 'ABIERTA' && s.idGenerador === r.idGenerador && s.fecha <= r.fecha) s.estado = 'ATENDIDA'; }));
+    db.solicitudes.sort((a, b) => b.fecha.localeCompare(a.fecha));
+    db.ultimaSync = iso(new Date());
+    save();
+    return nuevos;
+  }
+  // Lote enviado por el servidor → se aplica igual que si llegara por sincronización
+  const aplicarLote = (l) => aplicarNube({ lotes: [{ ID_Lote: l.id_lote, Zona: l.zona, Litros: l.litros, Entregas: l.entregas, Fecha_Envio: l.fecha_envio, Destino: l.destino, Manifiesto: l.manifiesto, Estado: l.estado, ID_Recolector: l.id_recolector, IDs_Recolecciones: l.ids }] });
+  const aplicarAviso = (a) => aplicarNube({ avisos: [{ ID_Aviso: a.id_aviso, Fecha: a.fecha, ID_Generador: a.id_generador, Litros_Estimados: a.litros, Nota: a.nota, Estado: a.estado }] });
+
   function setConfig(c) { Object.assign(db.config, c); save(); }
 
   window.OleoDB = {
     load, save, reset, get db() { return db; }, ZONAS, COLONIAS, coloniaPermitida, iso, deRecolector,
     gen, rec, recsDe, zonas, zona, resumen, nivelEstimado, rutaDelDia,
     registrarEntrega, liquidar, enviarLote, altaGenerador, siguienteId, solicitar, setConfig,
-    TIPOS, desdeHoja, upsertGenerador, distanciaKm, coloniaCercana, coloniaDePunto,
+    TIPOS, desdeHoja, upsertGenerador, aplicarNube, aplicarLote, aplicarAviso, distanciaKm, coloniaCercana, coloniaDePunto,
     setUbicacion: (id, lat, lng) => { const g = gen(id); if (g) { g.lat = lat; g.lng = lng; g.ubicacionFecha = iso(new Date()).replace('T', ' ').slice(0, 16); save(); } return g; },
   };
 })();

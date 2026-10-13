@@ -49,6 +49,8 @@
   const altaRecolector = (datos) => accion('alta_recolector', datos);
   const loginRecolector = (id, contrasena) => accion('login_recolector', { id, contrasena });
   const actualizarUbicacion = (id, nombre, lat, lng) => accion('ubicacion', { id, nombre, lat, lng });
+  const aviso = (id, nombre, litros, nota) => accion('aviso', { id, nombre, litros, nota });
+  const enviarLote = (sesion, zona, litros, ids) => accion('enviar_lote', { sesion, zona, litros, ids: ids.join(',') });
 
   // CSV → arreglo de objetos (respeta comillas y comas dentro de los campos)
   function parseCSV(text) {
@@ -85,16 +87,24 @@
     r.ok ? p.resolve(r.text) : p.reject(new Error('HTTP ' + r.status));
   }
 
-  async function hoja(nombre) {
-    const url = `https://docs.google.com/spreadsheets/d/${CLOUD.sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(nombre)}`;
-    if (window.OleoNativeInfo && location.protocol === 'file:') return parseCSV(await fetchNativo(url));
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return parseCSV(await res.text());
+  // Lee una pestaña. Si no existe, Google devuelve la primera pestaña: con «clave» se verifica que sea la correcta.
+  async function hoja(nombre, clave) {
+    const url = `https://docs.google.com/spreadsheets/d/${CLOUD.sheetId}/gviz/tq?tqx=out:csv&headers=1&sheet=${encodeURIComponent(nombre)}`;
+    let texto;
+    if (window.OleoNativeInfo && location.protocol === 'file:') texto = await fetchNativo(url);
+    else {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      texto = await res.text();
+    }
+    const filas = parseCSV(texto);
+    if (clave && filas.length && !(clave in filas[0])) return [];
+    if (clave && !filas.length && texto.split('\n')[0].indexOf(clave) < 0) return [];
+    return filas;
   }
 
   window.OleoCloud = {
-    CLOUD, enabled, enviar, alta, altaRecolector, loginRecolector, actualizarUbicacion, hoja, parseCSV, fetchResultado,
+    CLOUD, enabled, enviar, alta, altaRecolector, loginRecolector, actualizarUbicacion, aviso, enviarLote, hoja, parseCSV, fetchResultado,
     sheetUrl: () => `https://docs.google.com/spreadsheets/d/${CLOUD.sheetId}/edit`,
   };
 })();
