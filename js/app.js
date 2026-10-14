@@ -135,6 +135,13 @@
   const recEtiqueta = () => { const r = yoRec(); return r ? `${r.id} · ${r.nombre}` : cfg().recolector; };
   const recId = () => (yoRec() || {}).id || 'OR-01';
   const esMio = (r) => D.deRecolector(r, recId());     // entregas del recolector con sesión
+  // Carga de la van: lo recolectado hoy sigue a bordo hasta que su lote se entrega a planta
+  function cargaVan() {
+    const hoy = db().recolecciones.filter(r => esMio(r) && new Date(r.fecha) >= hoy0());
+    const suma = (rs) => rs.reduce((s, r) => s + r.litros, 0);
+    const aPlanta = hoy.filter(r => r.estadoLote === 'EN PLANTA');
+    return { aBordo: suma(hoy) - suma(aPlanta), aPlanta: suma(aPlanta), recolectado: suma(hoy), pagado: hoy.reduce((s, r) => s + r.pago, 0) };
+  }
 
   function cuentaSheet() {
     const s = getSession() || {};
@@ -468,6 +475,7 @@
   // ======================================================
   //  RECOLECTOR
   // ======================================================
+  const VAN_CAP = 120;   // litros que caben en la camioneta
   function hoy0() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 
   // P1 · Inicio
@@ -475,15 +483,17 @@
     const ruta = D.rutaDelDia();
     const hechos = ruta.filter(p => p.estado === 'RECOLECTADO');
     const pend = ruta.filter(p => p.estado === 'PENDIENTE');
-    const litrosHoy = db().recolecciones.filter(r => esMio(r) && new Date(r.fecha) >= hoy0()).reduce((s, r) => s + r.litros, 0);
+    const van = cargaVan();
     const zs = D.zonas();
     const listos = zs.filter(z => z.estatus === 'LISTO PARA PLANTA');
     const next = pend[0];
     return `<div class="screen">
       <div class="brand-head"><div><h1>${esc(recNombre())}</h1><div class="sub">${yoRec() ? `<span class="pill">${esc(yoRec().id)}</span>` : ''}<span class="dot ${pend.length ? '' : 'ok'}"></span>${pend.length ? `En ruta · ${pend.length} ${pend.length === 1 ? 'parada pendiente' : 'paradas pendientes'}` : 'Ruta completada'}</div></div><button class="avatar dark" id="sw" aria-label="Tu cuenta">${icon('swap')}</button></div>
-      <div class="hero">${U.van(litrosHoy, 120)}
-        <div class="big num">${fmt.n1(litrosHoy)}<small>L</small></div>
-        <div class="cap">a bordo hoy · ${hechos.length} de ${ruta.length} paradas · ${fmt.mxn0(litrosHoy * cfg().precio_litro)} pagados</div>
+      <div class="hero">${U.van(van.aBordo, VAN_CAP)}
+        <div class="big num">${fmt.n1(van.aBordo)}<small>L</small></div>
+        <div class="cap">a bordo · ${hechos.length} de ${ruta.length} paradas · ${fmt.mxn0(van.pagado)} pagados hoy</div>
+        ${van.aPlanta > 0 ? `<div class="van-planta">${icon('factory')}<span><b class="num">${fmt.L(van.aPlanta)}</b> entregados hoy a planta${van.aBordo > 0 ? '' : ' · van vacía'}</span></div>` : ''}
+        ${van.aBordo >= VAN_CAP * 0.9 ? `<div class="van-planta llena">${icon('alert')}<span>Van casi llena · entrega el lote en planta</span></div>` : ''}
       </div>
       <div class="quick">
         <a href="#/r/escanear"><span class="q on">${icon('scan')}</span>Escanear</a>
@@ -1015,7 +1025,8 @@
         U.toast(/litros fuera|ID de generador/.test(e) ? 'Falta publicar la nueva versión del Apps Script' : e, 'alert'); return;
       }
       D.aplicarLote(r.data.lote); haptic('success');
-      U.toast(`${r.data.lote.id_lote} · ${fmt.L(r.data.lote.litros)} entregado a ${r.data.lote.destino} · ${r.data.lote.manifiesto}`, 'factory'); render();
+      const quedan = cargaVan().aBordo;
+      U.toast(`${r.data.lote.id_lote} · ${fmt.L(r.data.lote.litros)} entregado a ${r.data.lote.destino} · ${quedan > 0 ? `quedan ${fmt.L(quedan)} a bordo` : 'van vacía'}`, 'factory'); render();
     }));
     return html;
   }

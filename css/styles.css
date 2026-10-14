@@ -77,6 +77,10 @@ html.native .login { padding-top: calc(var(--safe-t) + 24px); }
 .hero .big { font-size: 64px; font-weight: 200; letter-spacing: -.04em; line-height: 1; }
 .hero .big small { font-size: 22px; font-weight: 400; color: var(--text-2); margin-left: 4px; letter-spacing: 0; }
 .hero .cap { color: var(--text-2); font-size: 14px; margin-top: 6px; }
+.van-planta { position: relative; display: inline-flex; align-items: center; gap: 7px; margin-top: 10px; padding: 6px 12px; border-radius: 999px; background: rgba(48, 209, 88, .12); color: #7ee2a0; font-size: 13px; }
+.van-planta svg { width: 15px; height: 15px; flex: none; }
+.van-planta b { color: var(--text); font-weight: 600; }
+.van-planta.llena { background: rgba(255, 194, 26, .14); color: var(--oil); }
 .hero-row { display: flex; align-items: center; justify-content: center; gap: 22px; position: relative; }
 .hero-row .art { max-width: 170px !important; }
 .hero-stat { text-align: left; }
