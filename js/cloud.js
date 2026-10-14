@@ -50,6 +50,7 @@
   const loginRecolector = (id, contrasena) => accion('login_recolector', { id, contrasena });
   const actualizarUbicacion = (id, nombre, lat, lng) => accion('ubicacion', { id, nombre, lat, lng });
   const aviso = (id, nombre, litros, nota) => accion('aviso', { id, nombre, litros, nota });
+  const reportarNivel = (id, nombre, litros) => accion('nivel', { id, nombre, litros });
   const enviarLote = (sesion, zona, litros, ids) => accion('enviar_lote', { sesion, zona, litros, ids: ids.join(',') });
 
   // CSV → arreglo de objetos (respeta comillas y comas dentro de los campos)
@@ -104,7 +105,7 @@
   }
 
   window.OleoCloud = {
-    CLOUD, enabled, enviar, alta, altaRecolector, loginRecolector, actualizarUbicacion, aviso, enviarLote, hoja, parseCSV, fetchResultado,
+    CLOUD, enabled, enviar, alta, altaRecolector, loginRecolector, actualizarUbicacion, aviso, reportarNivel, enviarLote, hoja, parseCSV, fetchResultado,
     sheetUrl: () => `https://docs.google.com/spreadsheets/d/${CLOUD.sheetId}/edit`,
   };
 })();

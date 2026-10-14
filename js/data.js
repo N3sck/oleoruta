@@ -201,6 +201,14 @@
   // Nivel estimado en el contenedor del puesto desde su última entrega
   function nivelEstimado(g, ahora = new Date()) {
     const rs = recsDe(g.id);
+    // Nivel reportado por el negocio: manda sobre la estimación hasta la siguiente entrega
+    if (g.nivelReportado != null && g.nivelFecha && (!rs[0] || g.nivelFecha > rs[0].fecha)) {
+      const litros = Math.min(g.contenedor, Math.max(0, g.nivelReportado)), pct = litros / g.contenedor;
+      const ultima = rs[0] ? new Date(rs[0].fecha) : null;
+      const plan = PLANES[g.id], cada = plan ? plan.cada : Math.max(7, Math.round(g.contenedor * 0.5 / g.litrosSemana * 7));
+      const proxima = pct >= 0.5 ? new Date(ahora) : ultima ? new Date(ultima.getTime() + cada * 86400000) : null;   // ≥ 50 %: entra a la ruta de hoy
+      return { litros, pct, ultima, proxima, cada, reportado: true, fechaReporte: g.nivelFecha, sinHistorial: !rs.length };
+    }
     if (!rs.length) return { litros: 0, pct: 0, ultima: null, proxima: null, cada: 0, sinHistorial: true };   // cuenta nueva: inicia en 0
     const ultima = new Date(rs[0].fecha);
     const dias = Math.max(0, (ahora - ultima) / 86400000);
@@ -318,6 +326,7 @@
       litrosSemana: +(r.Litros_Semana || r.litros_semana) || 5, clabe: String(r.CLABE_Simulada || r.clabe || '').replace(/\D/g, ''),
       fechaAlta: fechaISO(r.Fecha_Alta || r.fecha_alta), contenedor: /tianguis/i.test(tipo) ? 200 : 20,
       lat: num(r.Latitud ?? r.lat), lng: num(r.Longitud ?? r.lng), ubicacionFecha: r.Ubicacion_Fecha || r.ubicacion_fecha || '',
+      nivelReportado: num(r.Nivel_L), nivelFecha: r.Nivel_Fecha ? fechaHoja(r.Nivel_Fecha) : null,
     };
   }
 
@@ -360,6 +369,8 @@
       const prev = db.generadores[i];
       db.generadores[i] = { ...prev, ...g, contenedor: prev.contenedor || g.contenedor,
         lat: g.lat ?? prev.lat ?? null, lng: g.lng ?? prev.lng ?? null, ubicacionFecha: g.ubicacionFecha || prev.ubicacionFecha || '' };
+      // Conserva el reporte más reciente (el del teléfono puede ir adelante de la hoja unos segundos)
+      if (prev.nivelFecha && (!g.nivelFecha || prev.nivelFecha > g.nivelFecha)) Object.assign(db.generadores[i], { nivelReportado: prev.nivelReportado, nivelFecha: prev.nivelFecha });
     }
     save();
     return gen(g.id);
@@ -443,6 +454,7 @@
     gen, rec, recsDe, zonas, zona, resumen, nivelEstimado, rutaDelDia,
     registrarEntrega, liquidar, enviarLote, altaGenerador, siguienteId, solicitar, setConfig,
     TIPOS, desdeHoja, upsertGenerador, aplicarNube, aplicarLote, aplicarAviso, distanciaKm, coloniaCercana, coloniaDePunto,
+    setNivel: (id, litros, fecha) => { const g = gen(id); if (g) { g.nivelReportado = litros; g.nivelFecha = fecha; save(); } return g; },
     setUbicacion: (id, lat, lng) => { const g = gen(id); if (g) { g.lat = lat; g.lng = lng; g.ubicacionFecha = iso(new Date()).replace('T', ' ').slice(0, 16); save(); } return g; },
   };
 })();

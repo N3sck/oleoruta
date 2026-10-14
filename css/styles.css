@@ -556,3 +556,17 @@ table.t td.r, table.t th.r { text-align: right; }
 .sync-chip.ok { color: var(--ok); border-color: rgba(52, 211, 153, .3); background: var(--ok-dim); }
 .sync-chip.run svg { animation: spin 1s linear infinite; }
 .sync-chip.err { color: var(--bad); border-color: rgba(255, 92, 92, .35); background: rgba(255, 92, 92, .1); }
+
+/* ---------- reportar nivel de aceite ---------- */
+.quick.q5 { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.quick.q5 .q { width: 54px; height: 54px; }
+.bidon-btn { display: block; padding: 0; background: none; border: 0; cursor: pointer; }
+.nivel-vis { display: flex; align-items: center; gap: 18px; margin: 12px 0 4px; }
+.nivel-vis #nb { width: 120px; flex: none; }
+.nivel-vis #nb svg { width: 100%; height: auto; }
+.nivel-num .num { font-size: 52px; font-weight: 200; letter-spacing: -.03em; line-height: 1; }
+.nivel-num .num small { font-size: 20px; color: var(--text-2); }
+.nivel-chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+.nivel-chips .chip { padding: 9px 0; text-align: center; }
+.nivel-avisar { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 14px; border-radius: 14px; background: var(--card-2); border: 1px solid var(--line-2); font-size: 14px; }
+.nivel-avisar input { width: 22px; height: 22px; accent-color: var(--oil); flex: none; }

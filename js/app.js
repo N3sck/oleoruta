@@ -72,13 +72,16 @@
   //  SESIÓN · iniciar sesión y crear cuenta
   //  Usuario = ID_Generador · Contraseña = Nombre_Negocio (se validan contra la hoja «Generadores»)
   // ======================================================
+  // «hoy», «mañana» o la fecha
+  const cuando = (d) => { const h = new Date(); h.setHours(0, 0, 0, 0); const x = new Date(d); x.setHours(0, 0, 0, 0); const k = Math.round((x - h) / 86400000); return k <= 0 ? 'hoy' : k === 1 ? 'mañana' : fmt.fecha(d); };
   const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const normId = (t) => { const m = String(t || '').toUpperCase().match(/GEN\s*-?\s*(\d{1,4})/); return m ? 'GEN-' + m[1].padStart(3, '0') : null; };
 
   // ---------- Sincronización: lo que registra un teléfono lo ven todos ----------
   let syncEnCurso = false, ultimaSync = 0;
   const firma = () => { const d = db(); return [d.recolecciones.length, d.solicitudes.length, d.lotes.length,
-    d.recolecciones.filter(r => r.estadoLote === 'EN PLANTA').length, d.solicitudes.filter(s => s.estado === 'ABIERTA').length, d.generadores.length].join('|'); };
+    d.recolecciones.filter(r => r.estadoLote === 'EN PLANTA').length, d.solicitudes.filter(s => s.estado === 'ABIERTA').length, d.generadores.length,
+    d.generadores.map(g => g.nivelFecha || '').join(',')].join('|'); };
   const VISTAS_VIVAS = /^#\/(g\/[^/]+\/(inicio|entregas|impacto)|r\/(inicio|ruta|zonas|tablero|puestos|puesto|monitor))/;
   async function sincronizarNube(manual = false) {
     if (syncEnCurso || !window.OleoCloud || !OleoCloud.enabled()) return;
@@ -643,9 +646,9 @@
       <div class="flex mt16"><span class="avatar lg">${fmt.iniciales(g.nombre)}</span><div style="min-width:0"><h2 style="margin:0;font-size:22px;letter-spacing:-.01em">${esc(g.nombre)}</h2><div class="muted small">${esc(g.tipo)} · ${esc(g.responsable)}</div><div class="flex mt8"><span class="pill oil">${g.id}</span><span class="pill">${icon('pin')}${g.zona}</span></div></div></div>
       ${sol ? `<div class="card oil small"><b>${icon('bell').replace('<svg', '<svg style="width:15px;height:15px;vertical-align:-2px;color:var(--oil)"')} Aviso ${fmt.rel(sol.fecha)}</b><div class="muted mt8">“${esc(sol.nota)}” · ≈ ${fmt.L(sol.litrosEstimados)}</div></div>` : ''}
       <div class="card">
-        <div class="between"><span class="label">Contenedor · nivel estimado</span><span class="num" style="font-weight:600">${fmt.L(n.litros)} / ${g.contenedor} L</span></div>
+        <div class="between"><span class="label">Contenedor · nivel ${n.reportado ? `reportado ${fmt.rel(n.fechaReporte)}` : 'estimado'}</span><span class="num" style="font-weight:600">${fmt.L(n.litros)} / ${g.contenedor} L</span></div>
         <div class="mt8">${gauge(n.pct)}</div>
-        <div class="gauge-legend"><span>Última entrega ${rs[0] ? fmt.fecha(rs[0].fecha) : '—'}</span><span>${n.proxima ? 'Próxima ' + fmt.fecha(n.proxima) : 'Sin recolecciones aún'}</span></div>
+        <div class="gauge-legend"><span>Última entrega ${rs[0] ? fmt.fecha(rs[0].fecha) : '—'}</span><span>${n.proxima ? 'Próxima ' + cuando(n.proxima) : 'Sin recolecciones aún'}</span></div>
       </div>
       <div class="grid2">
         <div class="tile"><span class="label">Litros / semana</span><div class="v num">${fmt.n1(g.litrosSemana)}<small>L</small></div></div>
@@ -1021,7 +1024,7 @@
   function RPuestos() {
     return `<div class="screen">
       ${top('Puestos', '#/r/mas', `<a class="icon-btn" href="#/r/alta" aria-label="Alta">${icon('plus')}</a>`)}
-      <div class="rows">${db().generadores.map(g => { const n = D.nivelEstimado(g); return `<a class="row" href="#/r/puesto/${g.id}"><span class="avatar">${fmt.iniciales(g.nombre)}</span><span class="rt"><b>${esc(g.nombre)}</b><span>${g.id} · ${g.zona} · ${fmt.n1(g.litrosSemana)} L/sem</span><div class="mt8" style="max-width:180px">${gauge(n.pct, 'thin')}</div></span><span class="rv num">${fmt.L(n.litros)}<span>estimado</span></span>${icon('chev', 'chev')}</a>`; }).join('')}</div>
+      <div class="rows">${db().generadores.map(g => { const n = D.nivelEstimado(g); return `<a class="row" href="#/r/puesto/${g.id}"><span class="avatar">${fmt.iniciales(g.nombre)}</span><span class="rt"><b>${esc(g.nombre)}</b><span>${g.id} · ${g.zona} · ${fmt.n1(g.litrosSemana)} L/sem</span><div class="mt8" style="max-width:180px">${gauge(n.pct, 'thin')}</div></span><span class="rv num">${fmt.L(n.litros)}<span>${n.reportado ? 'reportado' : 'estimado'}</span></span>${icon('chev', 'chev')}</a>`; }).join('')}</div>
       <a class="btn ghost mt16" href="#/r/alta">${icon('plus')}Alta de puesto nuevo</a>
     </div>${tabbarR('mas')}`;
   }
@@ -1168,13 +1171,14 @@
     const last = rs[0];
     const html = `<div class="screen">
       <div class="brand-head"><div style="min-width:0"><h1>${esc(g.nombre)}</h1><div class="sub"><span class="dot ${sol ? '' : 'ok'}"></span>${sol ? 'Aviso enviado · recolector en camino' : `${g.id} · ${esc(g.colonia)}`}</div></div><button class="avatar" id="sw" aria-label="Tu cuenta">${fmt.iniciales(g.nombre)}</button></div>
-      <div class="hero"><div class="hero-row">${U.bidon(n.pct, { tambo: g.contenedor > 50 })}
-        <div class="hero-stat"><div class="label">Nivel estimado</div><div class="big num" style="font-size:54px;margin-top:6px">${fmt.n1(n.litros)}<small>L</small></div><div class="cap">de ${g.contenedor} L · ${fmt.pct(n.pct)}</div><div class="status-line mt16">${icon('truck').replace('<svg', '<svg style="width:15px;height:15px;color:var(--oil)"')}<span>${n.proxima ? `Próxima <b>${fmt.fecha(n.proxima)}</b>` : '<b>Cuenta nueva</b> · sin recolecciones'}</span></div></div></div>
+      <div class="hero"><div class="hero-row"><button class="bidon-btn" id="nivelHero" aria-label="Reportar mi nivel">${U.bidon(n.pct, { tambo: g.contenedor > 50 })}</button>
+        <div class="hero-stat"><div class="label">${n.reportado ? 'Nivel reportado' : 'Nivel estimado'}</div><div class="big num" style="font-size:54px;margin-top:6px">${fmt.n1(n.litros)}<small>L</small></div><div class="cap">de ${g.contenedor} L · ${fmt.pct(n.pct)}</div><div class="status-line mt16">${icon('truck').replace('<svg', '<svg style="width:15px;height:15px;color:var(--oil)"')}<span>${n.proxima ? `Próxima <b>${cuando(n.proxima)}</b>` : '<b>Cuenta nueva</b> · sin recolecciones'}</span></div></div></div>
       </div>
       <div class="mt16">${gauge(n.pct)}</div>
-      <div class="gauge-legend"><span>Última entrega ${last ? fmt.rel(last.fecha) : '—'}</span><span>${fmt.n1(g.litrosSemana)} L por semana</span></div>
-      <div class="quick">
-        <a href="#/g/${g.id}/qr"><span class="q on">${icon('qr')}</span>Mi QR</a>
+      <div class="gauge-legend"><span>${n.reportado ? `Reportado ${fmt.rel(n.fechaReporte)}` : `Última entrega ${last ? fmt.rel(last.fecha) : '—'}`}</span><span>${fmt.n1(g.litrosSemana)} L por semana</span></div>
+      <div class="quick q5">
+        <button id="nivel"><span class="q on">${icon('drop')}</span>Mi nivel</button>
+        <a href="#/g/${g.id}/qr"><span class="q">${icon('qr')}</span>Mi QR</a>
         <button id="avisar"><span class="q">${icon('bell')}</span>Avisar</button>
         <a href="#/g/${g.id}/entregas"><span class="q">${icon('receipt')}</span>Pagos</a>
         <a href="#/g/${g.id}/impacto"><span class="q">${icon('leaf')}</span>Impacto</a>
@@ -1198,9 +1202,59 @@
         <div class="row"><span class="ri">${icon('gift')}</span><span class="rt"><b>Canjear saldo en tiendas</b><span>Tiendas de barrio participantes</span></span><span class="pill">Próximamente</span></div>
       </div>
     </div>${tabbarG(g.id, 'inicio')}`;
-    setTimeout(() => { const b = app.querySelector('#avisar'); if (b) b.onclick = () => avisarSheet(g); });
+    setTimeout(() => {
+      const b = app.querySelector('#avisar'); if (b) b.onclick = () => avisarSheet(g);
+      ['#nivel', '#nivelHero'].forEach(sel => { const x = app.querySelector(sel); if (x) x.onclick = () => nivelSheet(g); });
+    });
     return html;
   }
+  function nivelSheet(g) {
+    const n = D.nivelEstimado(g), cap = g.contenedor, paso = cap > 50 ? 5 : 0.5;
+    let l = Math.round(n.litros / paso) * paso;
+    const abierto = db().solicitudes.some(s => s.idGenerador === g.id && s.estado === 'ABIERTA');
+    U.sheet(`<div class="between"><h3 style="margin:0;font-size:20px">¿Cuánto aceite tienes?</h3><button class="icon-btn" data-close>${icon('close')}</button></div>
+      <p class="muted small">Mira tu ${cap > 50 ? 'contenedor' : 'bidón'} y marca hasta dónde llega. El recolector verá este nivel en su ruta.</p>
+      <div class="nivel-vis"><div id="nb"></div><div class="nivel-num"><div class="num" id="nl"></div><div class="muted small" id="np"></div></div></div>
+      <input type="range" class="oil" id="nr" min="0" max="${cap}" step="${paso}" value="${l}">
+      <div class="nivel-chips">${[['Vacío', 0], ['¼', .25], ['½', .5], ['¾', .75], ['Lleno', 1]].map(([t, f]) => `<button type="button" class="chip" data-f="${f}">${t}</button>`).join('')}</div>
+      <label class="nivel-avisar" id="nav" ${abierto ? 'hidden' : ''}><input type="checkbox" id="nac"><span><b>Avisar al recolector</b><br><span class="muted small">Tu puesto entra a la ruta de hoy</span></span></label>
+      ${abierto ? `<div class="note mt16">${icon('bell')}<span>Ya tienes un aviso abierto: el recolector está en camino.</span></div>` : ''}
+      <button class="btn mt16" id="ns">${icon('check')}<span>Guardar nivel</span></button>`, (sh, close) => {
+      const upd = () => {
+        const pct = l / cap;
+        sh.querySelector('#nb').innerHTML = U.bidon(pct, { tambo: cap > 50 });
+        sh.querySelector('#nl').innerHTML = `${fmt.n1(l)}<small> L</small>`;
+        sh.querySelector('#np').textContent = `de ${cap} L · ${fmt.pct(pct)}`;
+        sh.querySelector('#nr').value = l;
+        sh.querySelectorAll('.nivel-chips .chip').forEach(c => c.classList.toggle('on', Math.abs(+c.dataset.f * cap - l) < paso / 2));
+        if (!abierto) { const ac = sh.querySelector('#nac'); if (pct >= 0.75 && !ac.dataset.tocado) ac.checked = true; if (pct < 0.25 && !ac.dataset.tocado) ac.checked = false; }
+      };
+      sh.querySelector('#nr').oninput = (e) => { l = +e.target.value; upd(); };
+      sh.querySelectorAll('.nivel-chips .chip').forEach(c => c.onclick = () => { l = Math.round(+c.dataset.f * cap / paso) * paso; haptic('light'); upd(); });
+      if (!abierto) sh.querySelector('#nac').onchange = (e) => { e.target.dataset.tocado = '1'; };
+      sh.querySelector('#ns').onclick = async () => {
+        const b = sh.querySelector('#ns'), t = b.querySelector('span');
+        if (!window.OleoCloud || !OleoCloud.enabled()) { U.toast('Se necesita conexión para guardar tu nivel', 'alert'); return; }
+        b.disabled = true; t.textContent = 'Guardando…';
+        let r; try { r = await OleoCloud.reportarNivel(g.id, g.nombre, l); } catch (e) { r = { ok: false }; }
+        if (!r.ok) {
+          b.disabled = false; t.textContent = 'Guardar nivel';
+          const e = (r.data && r.data.error) || 'No se pudo guardar tu nivel.';
+          U.toast(/litros fuera|ID de generador/.test(e) ? 'Falta publicar la nueva versión del Apps Script' : e, 'alert'); return;
+        }
+        D.setNivel(g.id, r.data.litros, r.data.fecha.slice(0, 19));
+        let msg = `Nivel guardado · ${fmt.L(r.data.litros)}`;
+        const avisar = !abierto && sh.querySelector('#nac').checked && l > 0;
+        if (avisar) {
+          let a; try { a = await OleoCloud.aviso(g.id, g.nombre, l, 'Nivel reportado desde la app'); } catch (e) { a = { ok: false }; }
+          if (a.ok && a.data.aviso) { D.aplicarAviso(a.data.aviso); msg += ' y aviso enviado al recolector'; }
+        }
+        close(); haptic('success'); U.toast(msg, 'drop'); render();
+      };
+      upd();
+    });
+  }
+
   function avisarSheet(g) {
     const n = D.nivelEstimado(g);
     let l = Math.max(1, Math.round(n.litros));
